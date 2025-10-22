@@ -4,6 +4,7 @@ import alarm
 from lightsaber_state import LightsaberState
 from sound_manager import SoundManager
 from led_manager import LEDManager
+from saber_led_manager import SaberLEDManager
 from sensor_manager import SensorManager
 from logging_manager import LoggingManager
 from state_machines.power_state_machine import PowerStateMachine
@@ -23,10 +24,11 @@ class Lightsaber:
         # Initialize other managers
         self.sound_manager = SoundManager()
         self.led_manager = LEDManager()
+        self.saber_led_manager = SaberLEDManager()
         self.sensor_manager = SensorManager()
         
         # Load saved animation index from NVM
-        self.state.current_animation_index = LEDManager.load_animation_index_static()
+        self.state.current_animation_index = SaberLEDManager.load_animation_index_static()
     
     def run(self):
         """Main program loop using event-driven architecture with power state machine"""
@@ -63,6 +65,7 @@ class Lightsaber:
             
             # Update LED and sound managers based on state transitions
             new_state = self.led_manager.process_tick(old_state, new_state, self.power_state_machine)
+            new_state = self.saber_led_manager.process_tick(old_state, new_state, self.power_state_machine)
             new_state = self.sound_manager.process_tick(old_state, new_state, self.power_state_machine)
             
             # Process logging at the end of the tick

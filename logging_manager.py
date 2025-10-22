@@ -70,7 +70,7 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log state transition: {e}")
     
-    def log_periodic_state(self, new_state):
+    def log_periodic_state(self, old_state, new_state, power_state_machine):
         """Log comprehensive state information periodically"""
         try:
             # Get current mode name
@@ -90,19 +90,14 @@ class LoggingManager:
             
             # Get battery voltage
             battery_voltage = getattr(new_state, 'battery_voltage', 0.0)
-            
-            # Get power state info
-            power_state_name = "UNKNOWN"
-            if hasattr(new_state, 'power_state') and new_state.power_state is not None:
-                # This would need to be passed from the power state machine
-                power_state_name = f"STATE_{new_state.power_state}"
+
             
             # Print comprehensive state information
             print("=" * 60)
             print("LIGHTSABER PERIODIC STATE REPORT")
             print("=" * 60)
             print(f"Current Mode: {current_mode}")
-            print(f"Power State: {power_state_name}")
+            print(f"Power State: {power_state_machine.get_state_name(new_state.power_state)}")
             print(f"Animation Index: {new_state.current_animation_index}")
             print(f"Battery Voltage: {battery_voltage:.2f}V")
             print(f"Accelerometer Available: {new_state.accelerometer_available}")
@@ -133,11 +128,11 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log periodic state: {e}")
     
-    def check_periodic_logging(self, new_state):
+    def check_periodic_logging(self, old_state, new_state, power_state_machine):
         """Check if it's time to log periodic state information"""
         now = time.monotonic()
         if now - self.last_state_log_time >= config.STATE_LOG_INTERVAL:
-            self.log_periodic_state(new_state)
+            self.log_periodic_state(old_state, new_state, power_state_machine)
             self.last_state_log_time = now
     
     def log_event(self, event_name, details=None):
@@ -184,6 +179,6 @@ class LoggingManager:
         self.log_state_transition(old_state, new_state, power_state_machine)
         
         # Check for periodic logging
-        self.check_periodic_logging(new_state)
+        self.check_periodic_logging(old_state, new_state, power_state_machine)
         
         return new_state

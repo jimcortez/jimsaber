@@ -78,8 +78,9 @@ class LightsaberState:
         }
         self.builtin_pixel_color = (0, 0, 0)
         
-        # Power button state
-        self.button_pressed = False
+        # Button states
+        self.power_button_pressed = False
+        self.activity_button_pressed = False
     
     def copy(self):
         """Create a deep copy of the current state"""
@@ -113,7 +114,8 @@ class LightsaberState:
         new_state.power_state_name = self.power_state_name
         new_state.status_leds = self.status_leds.copy()
         new_state.builtin_pixel_color = self.builtin_pixel_color
-        new_state.button_pressed = self.button_pressed
+        new_state.power_button_pressed = self.power_button_pressed
+        new_state.activity_button_pressed = self.activity_button_pressed
         return new_state
     
     def add_event(self, event):

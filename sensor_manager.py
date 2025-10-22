@@ -122,8 +122,9 @@ class SensorManager:
             self.switch.update()
         self.activity_button.update()
         
-        # Set button pressed state (only if switch is initialized)
-        new_state.button_pressed = self.switch.pressed if self.switch is not None else False
+        # Set button pressed states (only if switch is initialized)
+        new_state.power_button_pressed = self.switch.pressed if self.switch is not None else False
+        new_state.activity_button_pressed = self.activity_button.pressed
         
         # Detect power button events (only if switch is initialized)
         if self.switch is not None:
