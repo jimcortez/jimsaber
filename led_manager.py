@@ -138,6 +138,17 @@ class LEDManager:
                 min_intensity=params.get("min_intensity", 0),
                 max_intensity=params.get("max_intensity", 1)
             )
+        elif animation_type == "chase":
+            chase_params = {
+                "speed": params["speed"],
+                "size": params["size"],
+                "spacing": params["spacing"],
+                "color": params["color"]
+            }
+            # Add reverse parameter if specified
+            if "reverse" in params:
+                chase_params["reverse"] = params["reverse"]
+            return Chase(target_pixel, **chase_params)
         else:
             raise ValueError(f"Unknown animation type: {animation_type}. Supported types: solid, rainbow_chase, sparkle, colorcycle, pulse")
     
@@ -182,14 +193,14 @@ class LEDManager:
                 active_animations.append(self.chase_on)
         
         # Add builtin pixel animation based on power state and button press
-        if hasattr(new_state, 'power_state') and new_state.power_state is not None:
+        if new_state.power_state is not None:
             if not new_state.button_pressed:
                 builtin_animation = self._get_builtin_pixel_animation_for_power_state(new_state.power_state, power_state_machine)
                 if builtin_animation:
                     active_animations.append(builtin_animation)
         
         # Add power button LED animation based on power state and button press
-        if hasattr(new_state, 'power_state') and new_state.power_state is not None:
+        if new_state.power_state is not None:
             if new_state.button_pressed:
                 # Use pressed animation when button is pressed
                 power_animation = self._get_power_button_led_animation('pressed')
@@ -199,7 +210,7 @@ class LEDManager:
                 active_animations.append(power_animation)
         
         # Add activity button LED animation based on power state and button press
-        if hasattr(new_state, 'power_state') and new_state.power_state is not None:
+        if new_state.power_state is not None:
             if new_state.activity_button_pressed:
                 # Use pressed animation when button is pressed
                 activity_animation = self._get_activity_button_led_animation('pressed')
@@ -210,53 +221,58 @@ class LEDManager:
         
         return active_animations
     
+    def _get_animation_for_power_state(self, power_state, power_state_machine, animation_type):
+        """
+        Generic method to get animation for the given power state and animation type.
+        Falls back to default animation if no specific animation is found.
+        
+        Args:
+            power_state: The power state from power_state_machine
+            power_state_machine: The power state machine instance
+            animation_type: Type of animation ('builtin_pixel', 'power_button_led', 'activity_button_led')
+        
+        Returns:
+            Animation object or None for DEEP_SLEEP state
+        """
+        # Map power states to animation keys
+        power_state_mapping = {
+            power_state_machine.SLEEPING: 'sleeping',
+            power_state_machine.ACTIVATING: 'activating', 
+            power_state_machine.ACTIVE: 'active',
+            power_state_machine.IDLE: 'idle',
+            power_state_machine.DEACTIVATING: 'deactivating'
+        }
+        
+        # No animation for deep sleep
+        if power_state == power_state_machine.DEEP_SLEEP:
+            return None
+        
+        # Get the animation key for this power state
+        animation_key = power_state_mapping.get(power_state)
+        if animation_key is None:
+            return None
+        
+        # Get the appropriate animation based on type
+        if animation_type == 'builtin_pixel':
+            return self._get_builtin_pixel_animation(animation_key)
+        elif animation_type == 'power_button_led':
+            return self._get_power_button_led_animation(animation_key)
+        elif animation_type == 'activity_button_led':
+            return self._get_activity_button_led_animation(animation_key)
+        else:
+            return None
+    
     def _get_builtin_pixel_animation_for_power_state(self, power_state, power_state_machine):
         """Get builtin pixel animation for the given power state"""
-        if power_state == power_state_machine.SLEEPING:
-            return self._get_builtin_pixel_animation('sleeping')
-        elif power_state == power_state_machine.ACTIVATING:
-            return self._get_builtin_pixel_animation('activating')
-        elif power_state == power_state_machine.ACTIVE:
-            return self._get_builtin_pixel_animation('active')
-        elif power_state == power_state_machine.IDLE:
-            return self._get_builtin_pixel_animation('idle')
-        elif power_state == power_state_machine.DEACTIVATING:
-            return self._get_builtin_pixel_animation('deactivating')
-        elif power_state == power_state_machine.DEEP_SLEEP:
-            return None  # No animation for deep sleep
-        return None
+        return self._get_animation_for_power_state(power_state, power_state_machine, 'builtin_pixel')
     
     def _get_power_button_led_animation_for_power_state(self, power_state, power_state_machine):
         """Get power button LED animation for the given power state"""
-        if power_state == power_state_machine.SLEEPING:
-            return self._get_power_button_led_animation('sleeping')
-        elif power_state == power_state_machine.ACTIVATING:
-            return self._get_power_button_led_animation('activating')
-        elif power_state == power_state_machine.ACTIVE:
-            return self._get_power_button_led_animation('active')
-        elif power_state == power_state_machine.IDLE:
-            return self._get_power_button_led_animation('idle')
-        elif power_state == power_state_machine.DEACTIVATING:
-            return self._get_power_button_led_animation('deactivating')
-        elif power_state == power_state_machine.DEEP_SLEEP:
-            return None  # No animation for deep sleep
-        return None
+        return self._get_animation_for_power_state(power_state, power_state_machine, 'power_button_led')
     
     def _get_activity_button_led_animation_for_power_state(self, power_state, power_state_machine):
         """Get activity button LED animation for the given power state"""
-        if power_state == power_state_machine.SLEEPING:
-            return self._get_activity_button_led_animation('sleeping')
-        elif power_state == power_state_machine.ACTIVATING:
-            return self._get_activity_button_led_animation('activating')
-        elif power_state == power_state_machine.ACTIVE:
-            return self._get_activity_button_led_animation('active')
-        elif power_state == power_state_machine.IDLE:
-            return self._get_activity_button_led_animation('idle')
-        elif power_state == power_state_machine.DEACTIVATING:
-            return self._get_activity_button_led_animation('deactivating')
-        elif power_state == power_state_machine.DEEP_SLEEP:
-            return None  # No animation for deep sleep
-        return None
+        return self._get_animation_for_power_state(power_state, power_state_machine, 'activity_button_led')
     
     def _setup_animations(self):
         """Initialize LED animations from STRIP_ANIMATIONS config"""
@@ -266,22 +282,15 @@ class LEDManager:
             animation = self._create_animation_from_config(animation_config, self.strip)
             self.animations.append(animation)
         
-        # Create Chase animations for power on/off
-        self.chase_on = Chase(
-            self.strip,
-            speed=config.CHASE_SPEED,
-            size=config.CHASE_SIZE,
-            spacing=config.CHASE_SPACING,
-            color=config.PRIMARY_COLOR
+        # Create Chase animations for power on/off using SABER_STATE_ANIMATIONS config
+        self.chase_on = self._create_animation_from_config(
+            config.SABER_STATE_ANIMATIONS['activating'], 
+            self.strip
         )
         
-        self.chase_off = Chase(
-            self.strip,
-            speed=config.CHASE_SPEED,
-            size=config.CHASE_SIZE,
-            spacing=config.CHASE_SPACING,
-            color=color.BLACK,  # Black for power off
-            reverse=True  # Reverse direction for power off
+        self.chase_off = self._create_animation_from_config(
+            config.SABER_STATE_ANIMATIONS['deactivating'], 
+            self.strip
         )
     
     def mix_colors(self, color1, color2, weight2):
