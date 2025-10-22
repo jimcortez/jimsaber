@@ -90,19 +90,21 @@ class Lightsaber:
     
     def _enter_sleep_mode(self):
         """Enter appropriate sleep mode based on power state"""
-        # Release the switch pin for alarm use
-        self.sensor_manager.release_switch_pin()
-        
-        # Small delay to ensure pin is fully released
-        time.sleep(0.1)
-        
         if self.power_state_machine.should_enter_light_sleep():
+            # Release the switch pin for alarm use (LIGHT_SLEEP uses alarm pins)
+            self.sensor_manager.release_switch_pin()
+            # Small delay to ensure pin is fully released
+            time.sleep(0.1)
             print("Entering light sleep")
             self.power_state_machine.enter_light_sleep()
         elif self.power_state_machine.should_enter_deep_sleep():
+            # Release the switch pin for alarm use (DEEP_SLEEP uses alarm pins)
+            self.sensor_manager.release_switch_pin()
+            # Small delay to ensure pin is fully released
+            time.sleep(0.1)
             print("Entering deep sleep")
             self.power_state_machine.enter_deep_sleep()
-        
+        # Note: SLEEPING state doesn't use alarm pins, so no pin release needed
         # Note: Pin restoration will happen in the next main loop iteration
         # when the system wakes up and processes the next tick
     
@@ -111,6 +113,9 @@ class Lightsaber:
         if self.power_state_machine.current_state == self.power_state_machine.IDLE:
             # IDLE mode: slower for power saving
             time.sleep(config.IDLE_TICK_DELAY)
+        elif self.power_state_machine.current_state == self.power_state_machine.SLEEPING:
+            # SLEEPING mode: reduced sleep interval for power saving
+            time.sleep(config.SLEEPING_TICK_DELAY)
         else:
             # All other states: fast response
             time.sleep(config.ACTIVE_TICK_DELAY)

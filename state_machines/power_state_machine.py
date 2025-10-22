@@ -16,6 +16,7 @@ class PowerStateMachine(StateMachineBase):
     IDLE = 4
     DEACTIVATING = 5
     DEEP_SLEEP = 6
+    LIGHT_SLEEP = 7
     
     def __init__(self, logging_manager=None):
         """Initialize the power state machine"""
@@ -41,7 +42,8 @@ class PowerStateMachine(StateMachineBase):
             self.ACTIVE: "ACTIVE",
             self.IDLE: "IDLE",
             self.DEACTIVATING: "DEACTIVATING",
-            self.DEEP_SLEEP: "DEEP_SLEEP"
+            self.DEEP_SLEEP: "DEEP_SLEEP",
+            self.LIGHT_SLEEP: "LIGHT_SLEEP"
         }
         
         # Initialize inactivity timer
@@ -58,7 +60,8 @@ class PowerStateMachine(StateMachineBase):
         # Define valid transitions
         valid_transitions = {
             self.BOOTING: [self.SLEEPING],
-            self.SLEEPING: [self.ACTIVATING, self.DEEP_SLEEP],
+            self.SLEEPING: [self.ACTIVATING, self.LIGHT_SLEEP],
+            self.LIGHT_SLEEP: [self.ACTIVATING, self.DEEP_SLEEP],
             self.ACTIVATING: [self.ACTIVE],
             self.ACTIVE: [self.IDLE, self.DEACTIVATING],
             self.IDLE: [self.ACTIVE, self.DEACTIVATING],
@@ -104,12 +107,19 @@ class PowerStateMachine(StateMachineBase):
                 return True
         return False
     
+    def check_light_sleep_timeout(self):
+        """Check if light sleep timeout reached for transitioning from SLEEPING to LIGHT_SLEEP"""
+        if self.current_state == self.SLEEPING:
+            if time.monotonic() - self.inactivity_timer > config.LIGHT_SLEEP_TIMEOUT:
+                return True
+        return False
+    
     def update_inactivity_timer(self):
         """Update the inactivity timer (call when activity is detected)"""
         self.inactivity_timer = time.monotonic()
     
     def enter_light_sleep(self):
-        """Enter light sleep mode for SLEEPING state"""
+        """Enter light sleep mode for LIGHT_SLEEP state"""
         try:
             # Create button alarm for wake-up on button press
             button_alarm = alarm.pin.PinAlarm(pin=config.POWER_PIN, value=False, pull=True)
@@ -130,6 +140,7 @@ class PowerStateMachine(StateMachineBase):
                 print("Woke from light sleep (retry)")
             except Exception as e2:
                 print(f"Light sleep retry error: {e2}")
+    
     
     def was_woken_by_timer(self):
         """Check if the system was woken by a timer alarm (indicating deep sleep transition)"""
@@ -187,7 +198,7 @@ class PowerStateMachine(StateMachineBase):
     
     def handle_power_button_press(self):
         """Handle power button press based on current state"""
-        if self.current_state == self.SLEEPING:
+        if self.current_state == self.SLEEPING or self.current_state == self.LIGHT_SLEEP:
             # Start activation sequence
             self.reset_animation_flags()
             self.transition_to(self.ACTIVATING)
@@ -205,7 +216,7 @@ class PowerStateMachine(StateMachineBase):
         if self.current_state == self.IDLE:
             # Return to active state
             self.transition_to(self.ACTIVE)
-        elif self.current_state == self.SLEEPING:
+        elif self.current_state in [self.SLEEPING, self.LIGHT_SLEEP]:
             # Update inactivity timer
             self.update_inactivity_timer()
     
@@ -222,18 +233,20 @@ class PowerStateMachine(StateMachineBase):
             self.transition_to(self.SLEEPING)
             return  # Don't check other conditions immediately after state transition
         
-        # Debug: Print current state when checking for timer wake
-        if self.current_state == self.SLEEPING:
-            print(f"Current state: {self.get_state_name(self.current_state)}")
+        # Check for light sleep timeout (SLEEPING -> LIGHT_SLEEP)
+        if self.check_light_sleep_timeout():
+            print("Light sleep timeout reached - transitioning to LIGHT_SLEEP")
+            self.transition_to(self.LIGHT_SLEEP)
+            return
         
-        # Check if we were woken by timer alarm (indicating deep sleep transition)
-        if self.current_state == self.SLEEPING and self.was_woken_by_timer():
+        # Check if we were woken by timer alarm (indicating deep sleep transition from LIGHT_SLEEP)
+        if self.current_state == self.LIGHT_SLEEP and self.was_woken_by_timer():
             print("Timer wake detected - transitioning to DEEP_SLEEP")
             self.transition_to(self.DEEP_SLEEP)
             return
         
-        # Check for deep sleep timeout (fallback check) - only if we've been sleeping long enough
-        if (self.current_state == self.SLEEPING and 
+        # Check for deep sleep timeout (fallback check) - only if we've been in light sleep long enough
+        if (self.current_state == self.LIGHT_SLEEP and 
             time.monotonic() - self.inactivity_timer > config.DEEP_SLEEP_TIMEOUT):
             self.transition_to(self.DEEP_SLEEP)
             return
@@ -251,11 +264,11 @@ class PowerStateMachine(StateMachineBase):
     
     def should_enter_sleep(self):
         """Check if the state machine should enter sleep mode"""
-        return self.current_state in [self.SLEEPING, self.DEEP_SLEEP]
+        return self.current_state in [self.SLEEPING, self.LIGHT_SLEEP, self.DEEP_SLEEP]
     
     def should_enter_light_sleep(self):
         """Check if the state machine should enter light sleep"""
-        return self.current_state == self.SLEEPING
+        return self.current_state == self.LIGHT_SLEEP
     
     def should_enter_deep_sleep(self):
         """Check if the state machine should enter deep sleep"""

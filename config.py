@@ -193,6 +193,7 @@ ACCEL_READ_INTERVAL = 0.01  # 100Hz max for accelerometer reading
 STATE_LOG_INTERVAL = 30.0  # Log state every 30 seconds
 
 # Power state machine settings
+LIGHT_SLEEP_TIMEOUT = 60.0  # 1 minute of sleeping before light sleep
 DEEP_SLEEP_TIMEOUT = 30 # 300.0  # 5 minutes of inactivity before deep sleep
 IDLE_TIMEOUT = 10.0  # Time before transitioning from ACTIVE to IDLE
 
@@ -203,3 +204,4 @@ LED_ANIMATION_DELAY = 0.01  # Small delay in LED animations to prevent overwhelm
 # Main loop timing
 ACTIVE_TICK_DELAY = 0.01  # Fast response for active states (10ms)
 IDLE_TICK_DELAY = 0.1     # Slower response for idle state (100ms) - power saving
+SLEEPING_TICK_DELAY = 0.1  # Reduced sleep interval for SLEEPING state
