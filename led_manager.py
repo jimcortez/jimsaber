@@ -14,7 +14,7 @@ from adafruit_led_animation.animation.pulse import Pulse
 import config
 import microcontroller
 from lightsaber_state import LightsaberState
-from rgb_led import RGBLED
+from rgb_led import RGBLED, MonochromeLED
 
 class LEDManager:
     """Manages all LED functionality and animations for the lightsaber"""
@@ -53,6 +53,14 @@ class LEDManager:
         )
         self.power_button_led.fill((0, 0, 0))  # Start off
         
+        # Activity button LED (monochrome PWM controlled)
+        self.activity_button_led = MonochromeLED(
+            config.ACTIVITY_BUTTON_LED_PIN,
+            brightness=config.ACTIVITY_BUTTON_LED_BRIGHTNESS,
+            auto_write=True
+        )
+        self.activity_button_led.fill((0, 0, 0))  # Start off
+        
         # Initialize builtin pixel animations for each power state
         self.builtin_pixel_animations = {}
         for state, animation_config in config.BUILTIN_PIXEL_ANIMATIONS.items():
@@ -74,6 +82,17 @@ class LEDManager:
             "animation_type": "solid",
             "params": {"color": color.WHITE}
         }), self.power_button_led)
+        
+        # Initialize activity button LED animations for each power state
+        self.activity_button_led_animations = {}
+        for state, animation_config in config.ACTIVITY_BUTTON_LED_ANIMATIONS.items():
+            self.activity_button_led_animations[state] = self._create_animation_from_config(animation_config, self.activity_button_led)
+        
+        # Create default animation for fallback
+        self.activity_button_led_default_animation = self._create_animation_from_config(config.ACTIVITY_BUTTON_LED_ANIMATIONS.get('default', {
+            "animation_type": "solid",
+            "params": {"color": color.WHITE}
+        }), self.activity_button_led)
         
         # Initialize animations
         self._setup_animations()
@@ -124,6 +143,10 @@ class LEDManager:
     def _get_power_button_led_animation(self, state):
         """Get power button LED animation for the given state, falling back to default if not found"""
         return self.power_button_led_animations.get(state, self.power_button_led_default_animation)
+    
+    def _get_activity_button_led_animation(self, state):
+        """Get activity button LED animation for the given state, falling back to default if not found"""
+        return self.activity_button_led_animations.get(state, self.activity_button_led_default_animation)
     
     def _setup_animations(self):
         """Initialize LED animations from STRIP_ANIMATIONS config"""
@@ -189,6 +212,17 @@ class LEDManager:
     def set_power_button_led_off(self):
         """Turn off the power button RGB LED"""
         self.set_power_button_led_color((0, 0, 0))
+    
+    def set_activity_button_led_color(self, color):
+        """Set the activity button LED color (converted to brightness)"""
+        try:
+            self.activity_button_led[0] = color
+        except Exception as e:
+            print(f"Failed to set activity button LED color: {e}")
+    
+    def set_activity_button_led_off(self):
+        """Turn off the activity button LED"""
+        self.set_activity_button_led_color((0, 0, 0))
     
     def set_status_indicators(self, mode, new_state):
         """Set status indicators based on current mode
@@ -369,10 +403,15 @@ class LEDManager:
         
         # Handle power button LED and builtin pixel based on button press state
         if new_state.button_pressed:
-            # Turn power button LED white when pressed (overrides power state animation)
-            self.set_power_button_led_color((255, 255, 255))
+            # Run pressed animation on power button LED (overrides power state animation)
+            self._get_power_button_led_animation('pressed').animate()
             # Set builtin pixel to white when button is pressed (overrides animation)
             self.set_builtin_pixel_color((255, 255, 255), new_state)
+        
+        # Handle activity button LED based on button press state
+        if new_state.activity_button_pressed:
+            # Run pressed animation on activity button LED (overrides power state animation)
+            self._get_activity_button_led_animation('pressed').animate()
         
         if new_state.power_state == power_state_machine.SLEEPING:
             # SLEEPING: Turn off LEDs, run sleeping animation on builtin pixel and power button LED
@@ -381,6 +420,8 @@ class LEDManager:
             if not new_state.button_pressed:
                 self._get_builtin_pixel_animation('sleeping').animate()
                 self._get_power_button_led_animation('sleeping').animate()
+            if not new_state.activity_button_pressed:
+                self._get_activity_button_led_animation('sleeping').animate()
             
         elif new_state.power_state == power_state_machine.ACTIVATING:
             # ACTIVATING: Run power-on animation
@@ -394,12 +435,16 @@ class LEDManager:
             if not new_state.button_pressed:
                 self._get_builtin_pixel_animation('activating').animate()
                 self._get_power_button_led_animation('activating').animate()
+            if not new_state.activity_button_pressed:
+                self._get_activity_button_led_animation('activating').animate()
             
         elif new_state.power_state == power_state_machine.ACTIVE:
             # ACTIVE: Normal operational LEDs, run active animation on builtin pixel and power button LED
             if not new_state.button_pressed:
                 self._get_builtin_pixel_animation('active').animate()
                 self._get_power_button_led_animation('active').animate()
+            if not new_state.activity_button_pressed:
+                self._get_activity_button_led_animation('active').animate()
             if not new_state.power_animation_active:
                 # Handle normal operational LED behavior
                 if new_state.current > new_state.IDLE and new_state.active_color:
@@ -427,6 +472,8 @@ class LEDManager:
             if not new_state.button_pressed:
                 self._get_builtin_pixel_animation('idle').animate()
                 self._get_power_button_led_animation('idle').animate()
+            if not new_state.activity_button_pressed:
+                self._get_activity_button_led_animation('idle').animate()
             
         elif new_state.power_state == power_state_machine.DEACTIVATING:
             # DEACTIVATING: Run power-off animation
@@ -440,6 +487,8 @@ class LEDManager:
             if not new_state.button_pressed:
                 self._get_builtin_pixel_animation('deactivating').animate()
                 self._get_power_button_led_animation('deactivating').animate()
+            if not new_state.activity_button_pressed:
+                self._get_activity_button_led_animation('deactivating').animate()
             
         elif new_state.power_state == power_state_machine.DEEP_SLEEP:
             # DEEP_SLEEP: Turn off LEDs, turn off builtin pixel and power button LED
@@ -447,6 +496,7 @@ class LEDManager:
             self.strip.show()
             self.set_builtin_pixel_off(new_state)  # Off for deep sleep
             self.set_power_button_led_off()  # Off for deep sleep
+            self.set_activity_button_led_off()  # Off for deep sleep
     
     
     

@@ -114,11 +114,40 @@ POWER_BUTTON_LED_ANIMATIONS = {
             "speed": 5.0
         }
     },
+    'pressed': {
+        "animation_type": "solid",
+        "params": {
+            "color": color.WHITE
+        }
+    },
     'default': {
         "animation_type": "solid",
         "params": {
             "speed": 1.0,
             "color": color.PURPLE
+        }
+    }
+}
+
+# Activity button LED animations for each power state
+ACTIVITY_BUTTON_LED_ANIMATIONS = {
+    'idle': {
+        "animation_type": "pulse",
+        "params": {
+            "speed": 2.0,
+            "color": color.WHITE
+        }
+    },
+    'pressed': {
+        "animation_type": "solid",
+        "params": {
+            "color": color.WHITE
+        }
+    },
+    'default': {
+        "animation_type": "solid",
+        "params": {
+            "color": color.WHITE
         }
     }
 }
@@ -146,10 +175,14 @@ POWER_BUTTON_LED_RED = board.D11   # Red channel for power button LED
 POWER_BUTTON_LED_GREEN = board.D12 # Green channel for power button LED
 POWER_BUTTON_LED_BLUE = board.D13  # Blue channel for power button LED
 
+# Activity button LED pin (monochrome PWM controlled)
+ACTIVITY_BUTTON_LED_PIN = board.D10  # Pin for activity button LED
+
 # NeoPixel brightness levels (0.0 to 1.0)
 STRIP_BRIGHTNESS = 1.0  # Main NeoPixel strip brightness
 BUILTIN_PIXEL_BRIGHTNESS = 0.3  # Built-in NeoPixel brightness (lower for status indication)
 POWER_BUTTON_LED_BRIGHTNESS = 0.8  # Power button RGB LED brightness (high-current capable)
+ACTIVITY_BUTTON_LED_BRIGHTNESS = 0.6  # Activity button LED brightness (monochrome PWM)
 
 # Timing constants
 POWER_ON_DURATION = 1.7
