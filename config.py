@@ -89,7 +89,7 @@ BUILTIN_PIXEL_ANIMATIONS = {
         "animation_type": "pulse",
         "params": {
             "color": color.RED,
-            "speed": 5.0
+            "speed": 0.01
         }
     },
     'default': {
@@ -113,7 +113,7 @@ POWER_BUTTON_LED_ANIMATIONS = {
         "animation_type": "pulse",
         "params": {
             "color": color.RED,
-            "speed": 5.0
+            "speed": 0.01
         }
     },
     'pressed': {
@@ -202,7 +202,7 @@ ACTIVITY_BUTTON_LED_PIN = board.D10  # Pin for activity button LED
 
 # NeoPixel brightness levels (0.0 to 1.0)
 STRIP_BRIGHTNESS = 1.0  # Main NeoPixel strip brightness
-BUILTIN_PIXEL_BRIGHTNESS = 1.0  # Built-in NeoPixel brightness (lower for status indication)
+BUILTIN_PIXEL_BRIGHTNESS = 0.5  # Built-in NeoPixel brightness (lower for status indication)
 POWER_BUTTON_LED_BRIGHTNESS = 0.8  # Power button RGB LED brightness (high-current capable)
 ACTIVITY_BUTTON_LED_BRIGHTNESS = 0.6  # Activity button LED brightness (monochrome PWM)
 

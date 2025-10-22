@@ -274,7 +274,7 @@ class PowerStateMachine(StateMachineBase):
     
     def should_enter_sleep(self):
         """Check if the state machine should enter sleep mode"""
-        return self.current_state in [self.SLEEPING, self.LIGHT_SLEEP, self.DEEP_SLEEP]
+        return self.current_state in [self.LIGHT_SLEEP, self.DEEP_SLEEP]
     
     def should_enter_light_sleep(self):
         """Check if the state machine should enter light sleep"""

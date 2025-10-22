@@ -99,7 +99,7 @@ class SoundManager:
     def process_tick(self, old_state, new_state, power_state_machine):
         """Process one tick of sound management based on state transitions"""
         # Handle power state machine integration
-        self._handle_power_state_sound_behavior(new_state, power_state_machine)
+        self._handle_power_state_sound_behavior(old_state, new_state, power_state_machine)
         
         # Handle motion events
         if new_state.has_event(new_state.HIT_START):
@@ -140,14 +140,19 @@ class SoundManager:
         
         return new_state
     
-    def _handle_power_state_sound_behavior(self, new_state, power_state_machine):
+    def _handle_power_state_sound_behavior(self, old_state, new_state, power_state_machine):
         """Handle sound behavior based on power state machine states"""
         if not hasattr(new_state, 'power_state') or new_state.power_state is None:
             return
         
-        if new_state.power_state == power_state_machine.SLEEPING:
-            # SLEEPING: Silent
-            self.stop_sound()
+        # Check if we're transitioning TO sleeping state
+        old_power_state = getattr(old_state, 'power_state', None)
+        new_power_state = new_state.power_state
+        
+        if new_power_state == power_state_machine.SLEEPING:
+            # SLEEPING: Silent (only stop if transitioning TO sleeping)
+            if old_power_state != power_state_machine.SLEEPING:
+                self.stop_sound()
             
         elif new_state.power_state == power_state_machine.ACTIVATING:
             # ACTIVATING: Play power-on sound
