@@ -216,6 +216,9 @@ class PowerStateMachine(StateMachineBase):
         if self.current_state == self.IDLE:
             # Return to active state
             self.transition_to(self.ACTIVE)
+        elif self.current_state == self.ACTIVE:
+            # Update state start time to reset idle timeout
+            self.state_start_time = time.monotonic()
         elif self.current_state in [self.SLEEPING, self.LIGHT_SLEEP]:
             # Update inactivity timer
             self.update_inactivity_timer()
@@ -295,8 +298,8 @@ class PowerStateMachine(StateMachineBase):
             self.handle_motion_detected()
         
         # Handle no motion timeout (transition from ACTIVE to IDLE)
-        if (new_state.current == new_state.ACTIVE and 
-            time.monotonic() - new_state.trigger_time > config.IDLE_TIMEOUT):
+        if (self.current_state == self.ACTIVE and 
+            time.monotonic() - self.state_start_time > config.IDLE_TIMEOUT):
             self.handle_no_motion_timeout()
         
         # Handle idle auto-shutdown timeout (transition from IDLE to DEACTIVATING)
