@@ -226,6 +226,13 @@ class PowerStateMachine(StateMachineBase):
             # Transition to idle state
             self.transition_to(self.IDLE)
     
+    def handle_idle_auto_shutdown_timeout(self):
+        """Handle auto-shutdown timeout when device has been IDLE for too long"""
+        if self.current_state == self.IDLE:
+            # Transition to deactivating state for auto-shutdown
+            self.reset_animation_flags()
+            self.transition_to(self.DEACTIVATING)
+    
     def update(self):
         """Update the power state machine - call this in main loop"""
         # Check for booting to sleeping transition (happens after first tick)
@@ -287,10 +294,15 @@ class PowerStateMachine(StateMachineBase):
         if new_state.has_event(new_state.SWING_START) or new_state.has_event(new_state.HIT_START):
             self.handle_motion_detected()
         
-        # Handle no motion timeout
-        if (new_state.current == new_state.IDLE and 
+        # Handle no motion timeout (transition from ACTIVE to IDLE)
+        if (new_state.current == new_state.ACTIVE and 
             time.monotonic() - new_state.trigger_time > config.IDLE_TIMEOUT):
             self.handle_no_motion_timeout()
+        
+        # Handle idle auto-shutdown timeout (transition from IDLE to DEACTIVATING)
+        if (self.current_state == self.IDLE and 
+            time.monotonic() - self.state_start_time > config.AUTO_SHUTDOWN_TIMEOUT):
+            self.handle_idle_auto_shutdown_timeout()
         
         # Update power enabled state based on power state machine
         if self.current_state in [

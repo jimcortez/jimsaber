@@ -54,10 +54,6 @@ STRIP_ANIMATIONS = [
 # Animation settings
 ANIMATION_DURATION = 2.0  # How long to run the color cycle animation
 
-# Chase animation settings for power on/off
-CHASE_SPEED = 0.1  # Speed of chase animation
-CHASE_SIZE = 3  # Number of pixels in the chase
-CHASE_SPACING = 2  # Spacing between chase elements
 
 # Builtin pixel ColorCycle animation settings
 BUILTIN_PIXEL_ANIMATIONS = {
@@ -152,6 +148,27 @@ ACTIVITY_BUTTON_LED_ANIMATIONS = {
     }
 }
 
+SABER_STATE_ANIMATIONS = {
+    'activating': {
+        "animation_type": "chase",
+        "params": {
+            "speed": 0.1,
+            "size": 3,
+            "spacing": 2,
+            "color": PRIMARY_COLOR
+        }
+    },
+    'deactivating': {
+        "animation_type": "chase",
+        "params": {
+            "speed": 0.1,
+            "size": 3,
+            "spacing": 2,
+            "color": (0, 0, 0),  # Black for power off
+            "reverse": True
+        }
+    }
+}
 
 # Sound effects for long press (can be modified)
 SOUND_EFFECTS = ['hit', 'swing', 'on', 'off']
@@ -196,6 +213,7 @@ STATE_LOG_INTERVAL = 30.0  # Log state every 30 seconds
 LIGHT_SLEEP_TIMEOUT = 60.0  # 1 minute of sleeping before light sleep
 DEEP_SLEEP_TIMEOUT = 30 # 300.0  # 5 minutes of inactivity before deep sleep
 IDLE_TIMEOUT = 10.0  # Time before transitioning from ACTIVE to IDLE
+AUTO_SHUTDOWN_TIMEOUT = 300.0  # 5 minute of being IDLE before auto-shutdown
 
 # Hardware stabilization and timing
 HARDWARE_STABILIZATION_DELAY = 0.1  # Delay for hardware to stabilize on startup
