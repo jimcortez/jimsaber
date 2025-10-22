@@ -11,6 +11,7 @@ from adafruit_led_animation.animation.rainbowchase import RainbowChase
 from adafruit_led_animation.animation.sparkle import Sparkle
 from adafruit_led_animation.animation.colorcycle import ColorCycle
 from adafruit_led_animation.animation.pulse import Pulse
+from adafruit_led_animation.group import AnimationGroup
 import config
 import microcontroller
 from lightsaber_state import LightsaberState
@@ -96,6 +97,10 @@ class LEDManager:
         
         # Initialize animations
         self._setup_animations()
+        
+        # Animation group tracking
+        self.active_animations = []
+        self.animation_group = None
     
     def _create_animation_from_config(self, animation_config, target_pixel):
         """Create an animation instance from animation config for the specified target pixel"""
@@ -147,6 +152,111 @@ class LEDManager:
     def _get_activity_button_led_animation(self, state):
         """Get activity button LED animation for the given state, falling back to default if not found"""
         return self.activity_button_led_animations.get(state, self.activity_button_led_default_animation)
+    
+    def _update_active_animations(self, animations_list):
+        """Update the list of active animations and recreate the AnimationGroup if needed"""
+        # Check if the animations list has changed
+        if animations_list != self.active_animations:
+            self.active_animations = animations_list
+            # Create new AnimationGroup with the current active animations
+            if self.active_animations:
+                self.animation_group = AnimationGroup(*self.active_animations)
+            else:
+                self.animation_group = None
+            print(f"Updated active animations: {len(self.active_animations)} animations")
+    
+    def _get_current_active_animations(self, new_state, power_state_machine):
+        """Determine which animations should be active based on current state"""
+        active_animations = []
+        
+        # Add strip animation if color animation is active
+        if new_state.color_animation_active:
+            current_animation = self.get_current_animation(new_state)
+            active_animations.append(current_animation)
+        
+        # Add power animation if power animation is active
+        if new_state.power_animation_active:
+            if new_state.has_event(new_state.POWER_OFF_PROGRESS):
+                active_animations.append(self.chase_off)
+            else:
+                active_animations.append(self.chase_on)
+        
+        # Add builtin pixel animation based on power state and button press
+        if hasattr(new_state, 'power_state') and new_state.power_state is not None:
+            if not new_state.button_pressed:
+                builtin_animation = self._get_builtin_pixel_animation_for_power_state(new_state.power_state, power_state_machine)
+                if builtin_animation:
+                    active_animations.append(builtin_animation)
+        
+        # Add power button LED animation based on power state and button press
+        if hasattr(new_state, 'power_state') and new_state.power_state is not None:
+            if new_state.button_pressed:
+                # Use pressed animation when button is pressed
+                power_animation = self._get_power_button_led_animation('pressed')
+            else:
+                power_animation = self._get_power_button_led_animation_for_power_state(new_state.power_state, power_state_machine)
+            if power_animation:
+                active_animations.append(power_animation)
+        
+        # Add activity button LED animation based on power state and button press
+        if hasattr(new_state, 'power_state') and new_state.power_state is not None:
+            if new_state.activity_button_pressed:
+                # Use pressed animation when button is pressed
+                activity_animation = self._get_activity_button_led_animation('pressed')
+            else:
+                activity_animation = self._get_activity_button_led_animation_for_power_state(new_state.power_state, power_state_machine)
+            if activity_animation:
+                active_animations.append(activity_animation)
+        
+        return active_animations
+    
+    def _get_builtin_pixel_animation_for_power_state(self, power_state, power_state_machine):
+        """Get builtin pixel animation for the given power state"""
+        if power_state == power_state_machine.SLEEPING:
+            return self._get_builtin_pixel_animation('sleeping')
+        elif power_state == power_state_machine.ACTIVATING:
+            return self._get_builtin_pixel_animation('activating')
+        elif power_state == power_state_machine.ACTIVE:
+            return self._get_builtin_pixel_animation('active')
+        elif power_state == power_state_machine.IDLE:
+            return self._get_builtin_pixel_animation('idle')
+        elif power_state == power_state_machine.DEACTIVATING:
+            return self._get_builtin_pixel_animation('deactivating')
+        elif power_state == power_state_machine.DEEP_SLEEP:
+            return None  # No animation for deep sleep
+        return None
+    
+    def _get_power_button_led_animation_for_power_state(self, power_state, power_state_machine):
+        """Get power button LED animation for the given power state"""
+        if power_state == power_state_machine.SLEEPING:
+            return self._get_power_button_led_animation('sleeping')
+        elif power_state == power_state_machine.ACTIVATING:
+            return self._get_power_button_led_animation('activating')
+        elif power_state == power_state_machine.ACTIVE:
+            return self._get_power_button_led_animation('active')
+        elif power_state == power_state_machine.IDLE:
+            return self._get_power_button_led_animation('idle')
+        elif power_state == power_state_machine.DEACTIVATING:
+            return self._get_power_button_led_animation('deactivating')
+        elif power_state == power_state_machine.DEEP_SLEEP:
+            return None  # No animation for deep sleep
+        return None
+    
+    def _get_activity_button_led_animation_for_power_state(self, power_state, power_state_machine):
+        """Get activity button LED animation for the given power state"""
+        if power_state == power_state_machine.SLEEPING:
+            return self._get_activity_button_led_animation('sleeping')
+        elif power_state == power_state_machine.ACTIVATING:
+            return self._get_activity_button_led_animation('activating')
+        elif power_state == power_state_machine.ACTIVE:
+            return self._get_activity_button_led_animation('active')
+        elif power_state == power_state_machine.IDLE:
+            return self._get_activity_button_led_animation('idle')
+        elif power_state == power_state_machine.DEACTIVATING:
+            return self._get_activity_button_led_animation('deactivating')
+        elif power_state == power_state_machine.DEEP_SLEEP:
+            return None  # No animation for deep sleep
+        return None
     
     def _setup_animations(self):
         """Initialize LED animations from STRIP_ANIMATIONS config"""
@@ -223,21 +333,6 @@ class LEDManager:
     def set_activity_button_led_off(self):
         """Turn off the activity button LED"""
         self.set_activity_button_led_color((0, 0, 0))
-    
-    def set_status_indicators(self, mode, new_state):
-        """Set status indicators based on current mode
-        
-        Note: Built-in pixel color is now controlled by power state machine
-        in _handle_power_state_led_behavior method.
-        
-        Power state builtin pixel colors:
-        - DEEP_SLEEP: Off (black)
-        - SLEEPING: Red
-        - IDLE: Yellow  
-        - ACTIVE: Green
-        """
-        # Built-in pixel color is handled by power state machine
-        pass
     
     def get_current_animation(self, new_state):
         """Get the current animation from the animations list"""
@@ -363,36 +458,34 @@ class LEDManager:
             if elapsed >= config.ANIMATION_DURATION:
                 new_state.color_animation_active = False
         
-        # Update LED displays based on current state
-        if new_state.power_animation_active:
-            # Handle power animation
-            chase_animation = self.chase_off if new_state.has_event(new_state.POWER_OFF_PROGRESS) else self.chase_on
-            chase_animation.animate()
-        elif new_state.color_animation_active:
-            # Handle color animation
-            current_animation = self.get_current_animation(new_state)
-            current_animation.animate()
-        elif new_state.current > new_state.IDLE and new_state.active_color:
-            # Handle active mode (swing/hit) with color blending
-            if new_state.current_sound:  # If sound is playing
-                blend = time.monotonic() - new_state.trigger_time
-                if new_state.current == new_state.SWING:
-                    blend = abs(0.5 - blend) * 2.0  # ramp up, down
-                self.strip.fill(self.mix_colors(new_state.active_color, config.IDLE_COLOR, blend))
-                self.strip.show()
-            else:
-                # No sound, return to idle
-                self.strip.fill(config.IDLE_COLOR)
-                self.strip.show()
-                new_state.current = new_state.IDLE
-        else:
-            # Idle state
-            if new_state.current == new_state.IDLE:
-                self.strip.fill(config.IDLE_COLOR)
-                self.strip.show()
+        # Update active animations list and create AnimationGroup
+        current_active_animations = self._get_current_active_animations(new_state, power_state_machine)
+        self._update_active_animations(current_active_animations)
         
-        # Update status indicators
-        self.set_status_indicators(new_state.current, new_state)
+        # Handle non-animation LED displays (swing/hit effects, idle state)
+        if not new_state.power_animation_active and not new_state.color_animation_active:
+            if new_state.current > new_state.IDLE and new_state.active_color:
+                # Handle active mode (swing/hit) with color blending
+                if new_state.current_sound:  # If sound is playing
+                    blend = time.monotonic() - new_state.trigger_time
+                    if new_state.current == new_state.SWING:
+                        blend = abs(0.5 - blend) * 2.0  # ramp up, down
+                    self.strip.fill(self.mix_colors(new_state.active_color, config.IDLE_COLOR, blend))
+                    self.strip.show()
+                else:
+                    # No sound, return to idle
+                    self.strip.fill(config.IDLE_COLOR)
+                    self.strip.show()
+                    new_state.current = new_state.IDLE
+            else:
+                # Idle state
+                if new_state.current == new_state.IDLE:
+                    self.strip.fill(config.IDLE_COLOR)
+                    self.strip.show()
+        
+        # Animate all active animations using the AnimationGroup
+        if self.animation_group:
+            self.animation_group.animate()
         
         return new_state
     
@@ -401,27 +494,15 @@ class LEDManager:
         if not hasattr(new_state, 'power_state') or new_state.power_state is None:
             return
         
-        # Handle power button LED and builtin pixel based on button press state
+        # Handle special button press behaviors
         if new_state.button_pressed:
-            # Run pressed animation on power button LED (overrides power state animation)
-            self._get_power_button_led_animation('pressed').animate()
             # Set builtin pixel to white when button is pressed (overrides animation)
             self.set_builtin_pixel_color((255, 255, 255), new_state)
         
-        # Handle activity button LED based on button press state
-        if new_state.activity_button_pressed:
-            # Run pressed animation on activity button LED (overrides power state animation)
-            self._get_activity_button_led_animation('pressed').animate()
-        
         if new_state.power_state == power_state_machine.SLEEPING:
-            # SLEEPING: Turn off LEDs, run sleeping animation on builtin pixel and power button LED
+            # SLEEPING: Turn off LEDs
             self.strip.fill(0)
             self.strip.show()
-            if not new_state.button_pressed:
-                self._get_builtin_pixel_animation('sleeping').animate()
-                self._get_power_button_led_animation('sleeping').animate()
-            if not new_state.activity_button_pressed:
-                self._get_activity_button_led_animation('sleeping').animate()
             
         elif new_state.power_state == power_state_machine.ACTIVATING:
             # ACTIVATING: Run power-on animation
@@ -429,66 +510,20 @@ class LEDManager:
                 new_state.power_animation_active = True
                 new_state.power_animation_start_time = time.monotonic()
             
-            # Run chase animation for power on
-            self.chase_on.animate()
-            # Run activating animation on builtin pixel and power button LED
-            if not new_state.button_pressed:
-                self._get_builtin_pixel_animation('activating').animate()
-                self._get_power_button_led_animation('activating').animate()
-            if not new_state.activity_button_pressed:
-                self._get_activity_button_led_animation('activating').animate()
-            
         elif new_state.power_state == power_state_machine.ACTIVE:
-            # ACTIVE: Normal operational LEDs, run active animation on builtin pixel and power button LED
-            if not new_state.button_pressed:
-                self._get_builtin_pixel_animation('active').animate()
-                self._get_power_button_led_animation('active').animate()
-            if not new_state.activity_button_pressed:
-                self._get_activity_button_led_animation('active').animate()
-            if not new_state.power_animation_active:
-                # Handle normal operational LED behavior
-                if new_state.current > new_state.IDLE and new_state.active_color:
-                    # Active mode (swing/hit) with color blending
-                    if new_state.current_sound:  # If sound is playing
-                        blend = time.monotonic() - new_state.trigger_time
-                        if new_state.current == new_state.SWING:
-                            blend = abs(0.5 - blend) * 2.0  # ramp up, down
-                        self.strip.fill(self.mix_colors(new_state.active_color, config.IDLE_COLOR, blend))
-                        self.strip.show()
-                    else:
-                        # No sound, return to idle
-                        self.strip.fill(config.IDLE_COLOR)
-                        self.strip.show()
-                        new_state.current = new_state.IDLE
-                else:
-                    # Idle state
-                    self.strip.fill(config.IDLE_COLOR)
-                    self.strip.show()
+            # ACTIVE: Normal operational LEDs
+            pass  # LED behavior handled by AnimationGroup system
             
         elif new_state.power_state == power_state_machine.IDLE:
-            # IDLE: Dim/static LEDs, run idle animation on builtin pixel and power button LED
+            # IDLE: Dim/static LEDs
             self.strip.fill(config.IDLE_COLOR)
             self.strip.show()
-            if not new_state.button_pressed:
-                self._get_builtin_pixel_animation('idle').animate()
-                self._get_power_button_led_animation('idle').animate()
-            if not new_state.activity_button_pressed:
-                self._get_activity_button_led_animation('idle').animate()
             
         elif new_state.power_state == power_state_machine.DEACTIVATING:
             # DEACTIVATING: Run power-off animation
             if not new_state.power_animation_active:
                 new_state.power_animation_active = True
                 new_state.power_animation_start_time = time.monotonic()
-            
-            # Run chase animation for power off
-            self.chase_off.animate()
-            # Run deactivating animation on builtin pixel and power button LED
-            if not new_state.button_pressed:
-                self._get_builtin_pixel_animation('deactivating').animate()
-                self._get_power_button_led_animation('deactivating').animate()
-            if not new_state.activity_button_pressed:
-                self._get_activity_button_led_animation('deactivating').animate()
             
         elif new_state.power_state == power_state_machine.DEEP_SLEEP:
             # DEEP_SLEEP: Turn off LEDs, turn off builtin pixel and power button LED
