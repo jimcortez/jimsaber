@@ -46,7 +46,8 @@ def initialize_lightsaber():
     prop_wing_enable_pin.direction = digitalio.Direction.OUTPUT
     prop_wing_enable_pin.value = False
 
-    state.current_animation_index = get_animation_index_from_nvm()
+    # Initialize animation index from NVM
+    saber_led_manager.set_animation_index(get_animation_index_from_nvm())
     
 def handle_deep_sleep_recovery():
     """Handle recovery from deep sleep"""
@@ -160,7 +161,7 @@ def main_loop():
         # Check if we should enter sleep mode AFTER state machine update
         if should_enter_light_sleep():
             #give the logger a chance before we go to sleep
-            new_state = logging_manager.process_tick(old_state, new_state, power_state_machine, sound_manager)
+            new_state = logging_manager.process_tick(old_state, new_state, power_state_machine, sound_manager, saber_led_manager)
 
             needs_deep_sleep = enter_light_sleep_mode() # blocks until woken up
 
@@ -178,7 +179,7 @@ def main_loop():
             new_state = sound_manager.process_tick(old_state, new_state, power_state_machine, saber_led_manager)
             
             # Process logging at the end of the tick (skip during wake and activation)
-            new_state = logging_manager.process_tick(old_state, new_state, power_state_machine, sound_manager)
+            new_state = logging_manager.process_tick(old_state, new_state, power_state_machine, sound_manager, saber_led_manager)
         
         # Update the main state with the new state
         state = new_state

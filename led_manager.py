@@ -5,7 +5,6 @@ import neopixel
 import board
 import adafruit_led_animation.color as color
 import config
-from adafruit_led_animation.group import AnimationGroup
 from lightsaber_state import LightsaberState
 from rgb_led import RGBLED, OnOffLed
 from led_utils import LEDAnimationManager, create_animation_from_config
@@ -52,9 +51,10 @@ class LEDManager:
         self.power_button_led_manager = LEDAnimationManager(self.power_button_led, config.POWER_BUTTON_LED_ANIMATIONS)
         self.activity_button_led_manager = LEDAnimationManager(self.activity_button_led, config.ACTIVITY_BUTTON_LED_ANIMATIONS)
         
-        # Animation group tracking
-        self.active_animations = []
-        self.animation_group = None
+        # Individual animation tracking for each LED
+        self.builtin_pixel_animation = None
+        self.power_button_led_animation = None
+        self.activity_button_led_animation = None
     
     def _get_builtin_pixel_animation(self, state):
         """Get builtin pixel animation for the given state, falling back to default if not found"""
@@ -68,9 +68,6 @@ class LEDManager:
         """Get activity button LED animation for the given state, falling back to default if not found"""
         return self.activity_button_led_manager.get_animation(state)
     
-    def _update_active_animations(self, animations_list):
-        """Update the list of active animations and recreate the AnimationGroup if needed"""
-       
     
     def _get_animation_for_power_state(self, power_state, animation_type):
         """
@@ -101,45 +98,43 @@ class LEDManager:
     
     def process_tick(self, old_state, new_state, power_state_machine):
         """Process one tick of button LED management based on state transitions"""
-        active_animations = []
         
-        #Handle power button LED animation
-        power_button_animation = None
+        # Handle power button LED animation
+        new_power_button_animation = None
         if new_state.power_button_pressed and old_state.power_button_pressed == False:
-            power_button_animation = self._get_power_button_led_animation("pressed")
+            new_power_button_animation = self._get_power_button_led_animation("pressed")
         else:
-            power_button_animation = self._get_animation_for_power_state(new_state.power_state, 'power_button_led')
+            new_power_button_animation = self._get_animation_for_power_state(new_state.power_state, 'power_button_led')
         
-        if power_button_animation:
-                active_animations.append(power_button_animation)
+        # Check if power button animation changed
+        if new_power_button_animation != self.power_button_led_animation:
+            self.power_button_led_animation = new_power_button_animation
         
-        #handle activity button LED animation
-        activity_button_animation = None
+        # Handle activity button LED animation
+        new_activity_button_animation = None
         if new_state.activity_button_pressed and old_state.activity_button_pressed == False:
             # Use pressed animation when button is pressed
-            activity_button_animation = self._get_activity_button_led_animation('pressed')
+            new_activity_button_animation = self._get_activity_button_led_animation('pressed')
         else:
-            activity_button_animation = self._get_animation_for_power_state(new_state.power_state, 'activity_button_led')
+            new_activity_button_animation = self._get_animation_for_power_state(new_state.power_state, 'activity_button_led')
 
-        if activity_button_animation:
-            active_animations.append(activity_button_animation)
+        # Check if activity button animation changed
+        if new_activity_button_animation != self.activity_button_led_animation:
+            self.activity_button_led_animation = new_activity_button_animation
 
-        #handle builtin pixel animation
-        builtin_pixel_animation = self._get_animation_for_power_state(new_state.power_state, 'builtin_pixel')
-        if builtin_pixel_animation:
-            active_animations.append(builtin_pixel_animation)
+        # Handle builtin pixel animation
+        new_builtin_pixel_animation = self._get_animation_for_power_state(new_state.power_state, 'builtin_pixel')
         
-        # Check if the animations list has changed
-        if active_animations != self.active_animations:
-            self.active_animations = active_animations
-            # Create new AnimationGroup with the current active animations
-            if self.active_animations:
-                self.animation_group = AnimationGroup(*self.active_animations)
-            else:
-                self.animation_group = None
+        # Check if builtin pixel animation changed
+        if new_builtin_pixel_animation != self.builtin_pixel_animation:
+            self.builtin_pixel_animation = new_builtin_pixel_animation
         
-        # Animate all active animations using the AnimationGroup
-        if self.animation_group:
-            self.animation_group.animate()
+        # Animate each active animation directly
+        if self.builtin_pixel_animation:
+            self.builtin_pixel_animation.animate()
+        if self.power_button_led_animation:
+            self.power_button_led_animation.animate()
+        if self.activity_button_led_animation:
+            self.activity_button_led_animation.animate()
         
         return new_state

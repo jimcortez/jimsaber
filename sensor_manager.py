@@ -83,16 +83,23 @@ class SensorManager:
         return new_state.cached_acceleration
     
     def get_battery_voltage(self, new_state):
-        """Get battery voltage reading"""
-        try:
-            # Convert ADC reading to voltage
-            # Formula: (ADC_value * 3.3V) / 65536 * 2 (voltage divider)
-            voltage = (self.vbat_voltage.value * 3.3) / 65536 * 2
-            new_state.battery_voltage = voltage
-            return voltage
-        except Exception as e:
-            print(f"Failed to read battery voltage: {e}")
-            return 0.0
+        """Get battery voltage reading with rate limiting"""
+        now = time.monotonic()
+        
+        # Force read on boot (when last_battery_read is 0) or when interval has elapsed
+        if new_state.last_battery_read == 0.0 or (now - new_state.last_battery_read >= config.BATTERY_READ_INTERVAL):
+            try:
+                # Convert ADC reading to voltage
+                # Formula: (ADC_value * 3.3V) / 65536 * 2 (voltage divider)
+                voltage = (self.vbat_voltage.value * 3.3) / 65536 * 2
+                new_state.battery_voltage = voltage
+                new_state.last_battery_read = now
+            except Exception as e:
+                print(f"Failed to read battery voltage: {e}")
+                # Keep the previous cached value on error
+        
+        # Return the cached value
+        return new_state.battery_voltage
     
     def _update_sensor_readings(self, new_state):
         """Update sensor readings for the current tick"""

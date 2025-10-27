@@ -70,7 +70,7 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log state transition: {e}")
     
-    def log_periodic_state(self, old_state, new_state, power_state_machine, sound_manager=None):
+    def log_periodic_state(self, old_state, new_state, power_state_machine, sound_manager=None, saber_led_manager=None):
         """Log comprehensive state information periodically"""
         try:
             # Get current mode name
@@ -102,12 +102,15 @@ class LoggingManager:
                 audio_playing = False
             
             # Print comprehensive state information
+            # Get animation index from saber LED manager
+            animation_index = saber_led_manager.get_animation_index() if saber_led_manager else "N/A"
+            
             print("=" * 60)
             print("LIGHTSABER PERIODIC STATE REPORT")
             print("=" * 60)
             print(f"Current Mode: {current_mode}")
             print(f"Power State: {power_state_machine.get_state_name(new_state.power_state)}")
-            print(f"Animation Index: {new_state.current_animation_index}")
+            print(f"Animation Index: {animation_index}")
             print(f"Battery Voltage: {battery_voltage:.2f}V")
             print(f"Accelerometer - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}")
             print(f"Accelerometer Magnitude: {accel_magnitude:.2f}")
@@ -116,10 +119,6 @@ class LoggingManager:
                 print(f"Effect Sound: {effect_name}")
             print(f"Audio Hardware Playing: {audio_playing}")
             print(f"Idle Sound File Open: {idle_sound_open}")
-            print(f"Color Animation Active: {getattr(new_state, 'color_animation_active', False)}")
-            print(f"Power Animation Active: {getattr(new_state, 'power_animation_active', False)}")
-            print(f"Status LEDs: {getattr(new_state, 'status_leds', {})}")
-            print(f"Builtin Pixel Color: {getattr(new_state, 'builtin_pixel_color', (0, 0, 0))}")
             
             # Show recent state transitions
             if self.state_transitions:
@@ -133,11 +132,11 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log periodic state: {e}")
     
-    def check_periodic_logging(self, old_state, new_state, power_state_machine, sound_manager=None):
+    def check_periodic_logging(self, old_state, new_state, power_state_machine, sound_manager=None, saber_led_manager=None):
         """Check if it's time to log periodic state information"""
         now = time.monotonic()
         if now - self.last_state_log_time >= config.STATE_LOG_INTERVAL:
-            self.log_periodic_state(old_state, new_state, power_state_machine, sound_manager)
+            self.log_periodic_state(old_state, new_state, power_state_machine, sound_manager, saber_led_manager)
             self.last_state_log_time = now
     
     def log_event(self, event_name, details=None):
@@ -178,12 +177,12 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log error: {e}")
     
-    def process_tick(self, old_state, new_state, power_state_machine=None, sound_manager=None):
+    def process_tick(self, old_state, new_state, power_state_machine=None, sound_manager=None, saber_led_manager=None):
         """Process one tick of logging management - called at end of main loop"""
         # Log state transitions
         self.log_state_transition(old_state, new_state, power_state_machine)
         
         # Check for periodic logging
-        self.check_periodic_logging(old_state, new_state, power_state_machine, sound_manager)
+        self.check_periodic_logging(old_state, new_state, power_state_machine, sound_manager, saber_led_manager)
         
         return new_state

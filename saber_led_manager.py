@@ -35,9 +35,28 @@ class SaberLEDManager:
         # Power animation state
         self.power_animation_active = False
         self.power_animation_start_time = 0.0
+        
+        # Saber effect state (hit/swing effects)
+        self.saber_effect_active = False
+        self.saber_effect = None
+        self.saber_effect_start_time = 0.0
+        
+        # Current animation index
+        self.current_animation_index = 0
 
         self.activation_lock = None
         self.deactivation_lock = None
+    
+    def get_animation_index(self):
+        """Get the current animation index"""
+        return self.current_animation_index
+    
+    def set_animation_index(self, index):
+        """Set the current animation index"""
+        if 0 <= index < len(self.animations):
+            self.current_animation_index = index
+        else:
+            print(f"Invalid animation index {index}, keeping current value {self.current_animation_index}")
     
     
     def _setup_animations(self):
@@ -73,18 +92,18 @@ class SaberLEDManager:
             self.swing_effect_animation = None
     
     
-    def get_current_animation(self, new_state):
+    def get_current_animation(self):
         """Get the current animation from the animations list"""
-        return self.animations[new_state.current_animation_index]
+        return self.animations[self.current_animation_index]
     
-    def cycle_animation(self, new_state):
+    def cycle_animation(self):
         """Cycle to the next animation in the list"""
-        new_state.current_animation_index = (new_state.current_animation_index + 1) % len(self.animations)
-        current_animation = self.get_current_animation(new_state)
+        self.current_animation_index = (self.current_animation_index + 1) % len(self.animations)
+        current_animation = self.get_current_animation()
         
         # Update idle color based on current animation config
-        if new_state.current_animation_index < len(config.STRIP_ANIMATIONS):
-            current_config = config.STRIP_ANIMATIONS[new_state.current_animation_index]
+        if self.current_animation_index < len(config.STRIP_ANIMATIONS):
+            current_config = config.STRIP_ANIMATIONS[self.current_animation_index]
             if current_config["animation_type"] == "solid":
                 new_color = current_config["params"]["color"]
                 config.IDLE_COLOR = (
@@ -99,40 +118,40 @@ class SaberLEDManager:
                 print(f"Animation changed to {animation_name}")
         
         # Save the new animation index to NVM
-        save_animation_index_to_nvm(new_state.current_animation_index)
+        save_animation_index_to_nvm(self.current_animation_index)
         
         return current_animation
     
     def _handle_hit_state(self, new_state):
         """Handle led behavior for HIT state"""
-        if not new_state.saber_effect_active:
+        if not self.saber_effect_active:
             self.current_animation = self.hit_effect_animation
-            new_state.saber_effect = 'hit'
-            new_state.saber_effect_active = True
-            new_state.saber_effect_start_time = time.monotonic()
+            self.saber_effect = 'hit'
+            self.saber_effect_active = True
+            self.saber_effect_start_time = time.monotonic()
             print("Started hit led effect")
-        elif new_state.saber_effect == 'hit':
-            elapsed = time.monotonic() - new_state.saber_effect_start_time
+        elif self.saber_effect == 'hit':
+            elapsed = time.monotonic() - self.saber_effect_start_time
             if elapsed >= config.HIT_DURATION:
-                new_state.saber_effect = None
-                new_state.saber_effect_active = False
+                self.saber_effect = None
+                self.saber_effect_active = False
                 print("Hit led effect completed (duration-based)")
                 self.current_animation = None
 
     def _handle_swing_state(self, new_state):
         """Handle led behavior for SWING state"""
         if self.swing_effect_animation:
-            if not new_state.saber_effect_active:
+            if not self.saber_effect_active:
                 self.current_animation = self.swing_effect_animation
-                new_state.saber_effect = 'swing'
-                new_state.saber_effect_active = True
-                new_state.saber_effect_start_time = time.monotonic()
+                self.saber_effect = 'swing'
+                self.saber_effect_active = True
+                self.saber_effect_start_time = time.monotonic()
                 print("Started swing led effect")
-        elif new_state.saber_effect == 'swing':
-            elapsed = time.monotonic() - new_state.saber_effect_start_time
+        elif self.saber_effect == 'swing':
+            elapsed = time.monotonic() - self.saber_effect_start_time
             if elapsed >= config.SWING_DURATION:
-                new_state.saber_effect = None
-                new_state.saber_effect_active = False
+                self.saber_effect = None
+                self.saber_effect_active = False
                 print("Swing led effect completed (duration-based)")
                 self.current_animation = None
 
@@ -152,15 +171,15 @@ class SaberLEDManager:
         if self.activation_lock.blocked:
             self.current_animation = self.activate_state_animation
 
-            if not new_state.power_animation_active:
-                new_state.power_animation_active = True
-                new_state.power_animation_start_time = time.monotonic()
+            if not self.power_animation_active:
+                self.power_animation_active = True
+                self.power_animation_start_time = time.monotonic()
                 print("Started power-on LED animation")
-            # Check if power-off animation is complete based on DEACTIVATION_DURATION
-            elif new_state.power_animation_active:
-                elapsed = time.monotonic() - new_state.power_animation_start_time
+            # Check if power-on animation is complete based on ACTIVATION_DURATION
+            elif self.power_animation_active:
+                elapsed = time.monotonic() - self.power_animation_start_time
                 if elapsed >= config.ACTIVATION_DURATION:
-                    new_state.power_animation_active = False
+                    self.power_animation_active = False
                     self.current_animation = None
                     self.activation_lock.unlock()
     
@@ -180,15 +199,15 @@ class SaberLEDManager:
         if self.deactivation_lock.blocked:
             self.current_animation = self.deactivate_state_animation
 
-            if not new_state.power_animation_active:
-                new_state.power_animation_active = True
-                new_state.power_animation_start_time = time.monotonic()
+            if not self.power_animation_active:
+                self.power_animation_active = True
+                self.power_animation_start_time = time.monotonic()
                 print("Started power-off LED animation")
             # Check if power-off animation is complete based on DEACTIVATION_DURATION
-            elif new_state.power_animation_active:
-                elapsed = time.monotonic() - new_state.power_animation_start_time
+            elif self.power_animation_active:
+                elapsed = time.monotonic() - self.power_animation_start_time
                 if elapsed >= config.DEACTIVATION_DURATION:
-                    new_state.power_animation_active = False
+                    self.power_animation_active = False
                     self.current_animation = None
                     self.deactivation_lock.unlock()
 
@@ -220,21 +239,21 @@ class SaberLEDManager:
 
         if new_state.power_state == power_state_machine.ACTIVE:
             # Handle motion events
-            if new_state.has_event(new_state.HIT_START) or new_state.saber_effect == 'hit':
+            if new_state.has_event(new_state.HIT_START) or self.saber_effect == 'hit':
                 self._handle_hit_state(new_state)
-            elif new_state.has_event(new_state.SWING_START) or new_state.saber_effect == 'swing':
+            elif new_state.has_event(new_state.SWING_START) or self.saber_effect == 'swing':
                 self._handle_swing_state(new_state)
 
             if not self.current_animation:
-                self.current_animation = self.get_current_animation(new_state)
+                self.current_animation = self.get_current_animation()
         
             # Handle button events
             if new_state.has_event(new_state.ACTIVITY_BUTTON_SHORT_PRESS):
                 print("Activity button pressed - cycling animation")
-                self.current_animation = self.cycle_animation(new_state)
+                self.current_animation = self.cycle_animation()
 
             if not self.current_animation:
-                self.current_animation = self.get_current_animation(new_state)
+                self.current_animation = self.get_current_animation()
 
         if self.current_animation:
             self.current_animation.animate()

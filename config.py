@@ -234,6 +234,7 @@ DEBOUNCE_TIME = 0.2
 LONG_PRESS_TIME = 0.5  # Time for long press detection
 DOUBLE_PRESS_TIMEOUT = 0.5  # Maximum time between presses for double-press detection
 ACCEL_READ_INTERVAL = 0.01  # 100Hz max for accelerometer reading
+BATTERY_READ_INTERVAL = 60.0  # Read battery voltage once per 60 seconds
 STATE_LOG_INTERVAL = 30.0  # Log state every 30 seconds
 
 # Power state machine settings
@@ -249,5 +250,5 @@ HARDWARE_STABILIZATION_DELAY = 0.1  # Delay for hardware to stabilize on startup
 
 # Main loop timing
 ACTIVE_TICK_DELAY = 0.01  # Fast response for active states (10ms)
-IDLE_TICK_DELAY = 0.1     # Slower response for idle state (100ms) - power saving
+IDLE_TICK_DELAY = 0.01     # Slower response for idle state (1ms) - power saving
 SLEEPING_TICK_DELAY = 0.1  # Reduced sleep interval for SLEEPING state
