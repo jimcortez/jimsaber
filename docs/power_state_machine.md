@@ -2,30 +2,31 @@
 
 ## Overview
 
-The lightsaber implements a sophisticated power state machine that manages power consumption, sleep modes, and hardware coordination. This system separates power management from operational behavior, providing clear state transitions and efficient power usage.
+The lightsaber implements a simplified power state machine that focuses on state tracking and transitions. Sleep functionality has been moved to the main code.py loop for better control and simpler state management. This system separates power state tracking from sleep handling, providing clear state transitions and efficient power usage.
 
 ## Architecture
 
 The power state machine is implemented using a modular approach:
 
-- **PowerStateMachine**: Core state machine logic and transitions
+- **PowerStateMachine**: Core state machine logic and transitions (simplified)
 - **StateMachineBase**: Base class providing common state machine functionality
 - **LightsaberState**: Integration point for power state information
 - **Manager Integration**: LED, Sound, and Sensor managers respond to power states
+- **Sleep Handling**: Moved to code.py main loop for better control
 
 ## Power States
 
 ### State Definitions
 
-| State | Value | Description | Power Level | LED State | Sound State | CircuitPython Sleep |
-|-------|-------|-------------|-------------|-----------|-------------|---------------------|
+| State | Value | Description | Power Level | LED State | Sound State | Sleep Handling |
+|-------|-------|-------------|-------------|-----------|-------------|----------------|
 | **BOOTING** | 0 | Initial startup state | High | Off | Silent | No Sleep |
-| **SLEEPING** | 1 | Light sleep, waiting for button | Minimal | Off | Silent | **Light Sleep** |
-| **ACTIVATING** | 2 | Power-on sequence | Medium | Animation | Power-on sound | No Sleep |
-| **ACTIVE** | 3 | Fully operational | High | On/Animated | Idle sounds | No Sleep |
-| **IDLE** | 4 | Powered, no motion | Medium | Dim/Static | Ambient sounds | No Sleep |
-| **DEACTIVATING** | 5 | Power-off sequence | Medium | Animation | Power-off sound | No Sleep |
-| **DEEP_SLEEP** | 6 | Ultra-low power, program restarts | Minimal | Off | Silent | **Deep Sleep** |
+| **SLEEPING** | 1 | Waiting for button press | Minimal | Off | Silent | **Handled by code.py** |
+| **WAKING** | 2 | Wake-up delay state | Medium | Off | Silent | No Sleep |
+| **ACTIVATING** | 3 | Power-on sequence | Medium | Animation | Power-on sound | No Sleep |
+| **ACTIVE** | 4 | Fully operational | High | On/Animated | Idle sounds | No Sleep |
+| **IDLE** | 5 | Powered, no motion | Medium | Dim/Static | Ambient sounds | No Sleep |
+| **DEACTIVATING** | 6 | Power-off sequence | Medium | Animation | Power-off sound | No Sleep |
 
 ### State Transitions
 
@@ -33,17 +34,17 @@ The power state machine enforces strict transition rules to ensure system stabil
 
 ```
 BOOTING → SLEEPING (automatic after first tick)
-SLEEPING → ACTIVATING (power button press)
-SLEEPING → DEEP_SLEEP (5 minutes of inactivity)
+SLEEPING → WAKING (power button press)
+WAKING → ACTIVATING (after wake delay)
 ACTIVATING → ACTIVE (both LED and sound animations complete)
 ACTIVE → IDLE (no motion detected for timeout)
 ACTIVE → DEACTIVATING (power button press)
 IDLE → ACTIVE (motion detected)
 IDLE → DEACTIVATING (power button press)
 DEACTIVATING → SLEEPING (both LED and sound animations complete)
-DEEP_SLEEP → SLEEPING (program restart from deep sleep)
-DEEP_SLEEP → ACTIVATING (power button press from deep sleep)
 ```
+
+**Note**: Deep sleep transitions are now handled by code.py when inactivity timeout is reached during SLEEPING state.
 
 ## Implementation Details
 
@@ -56,11 +57,11 @@ class PowerStateMachine(StateMachineBase):
     # State constants
     BOOTING = 0
     SLEEPING = 1
-    ACTIVATING = 2
-    ACTIVE = 3
-    IDLE = 4
-    DEACTIVATING = 5
-    DEEP_SLEEP = 6
+    WAKING = 2
+    ACTIVATING = 3
+    ACTIVE = 4
+    IDLE = 5
+    DEACTIVATING = 6
 ```
 
 #### Key Methods
@@ -69,8 +70,7 @@ class PowerStateMachine(StateMachineBase):
 - **`transition_to(new_state)`**: Executes state transitions with callbacks
 - **`is_activation_complete()`**: Checks if both LED and sound animations are complete
 - **`is_deactivation_complete()`**: Checks if both LED and sound animations are complete
-- **`enter_light_sleep()`**: Enters CircuitPython light sleep mode
-- **`enter_deep_sleep()`**: Enters CircuitPython deep sleep mode
+- **`check_inactivity_timeout()`**: Checks if inactivity timeout reached for deep sleep
 - **`process_tick(old_state, new_state)`**: Main update method called each tick
 
 ### Animation Synchronization
@@ -89,40 +89,36 @@ The power state machine implements critical synchronization for power-on and pow
 - **Implementation**: Tracks completion flags for both animations
 - **Benefit**: Ensures smooth, uninterrupted power-off experience
 
-### CircuitPython Sleep Implementation
+### Sleep Implementation (code.py)
 
-The power state machine integrates with CircuitPython's alarm system for power management:
+Sleep functionality has been moved to the main code.py loop for better control:
 
-#### Light Sleep (SLEEPING State)
-- **Implementation**: `alarm.light_sleep_until_alarms()`
-- **Wake Conditions**: Button press alarm OR timeout alarm
-- **Power Consumption**: Minimal but higher than deep sleep
-- **Program State**: Continues running, resumes after sleep statement
-- **Use Case**: Quick wake-up for immediate response
-
-#### Deep Sleep (DEEP_SLEEP State)
-- **Implementation**: `alarm.exit_and_deep_sleep_until_alarms()`
+#### Deep Sleep Handling
+- **Trigger**: When inactivity timeout is reached during SLEEPING state
+- **Implementation**: `alarm.exit_and_deep_sleep_until_alarms()` in code.py
 - **Wake Condition**: Button press alarm
 - **Power Consumption**: Ultra-low (2-7mA depending on chip)
 - **Program State**: **Program restarts from beginning**
 - **Use Case**: Maximum battery life during extended inactivity
+- **State Persistence**: Current state saved to NVM before sleep
+- **Recovery**: State restored from NVM on wake-up
 
 ### State Persistence
 
-The system implements state persistence for deep sleep recovery:
+The system implements state persistence for deep sleep recovery in code.py:
 
 ```python
-def save_state_to_nvm(self):
+def _save_state_to_nvm(self):
     """Save current state to non-volatile memory for deep sleep recovery"""
     import microcontroller
-    microcontroller.nvm[1] = self.current_state
+    microcontroller.nvm[1] = self.power_state_machine.current_state
 
-def restore_state_from_nvm(self):
+def _restore_state_from_nvm(self):
     """Restore state from non-volatile memory after deep sleep restart"""
     import microcontroller
     saved_state = microcontroller.nvm[1]
-    if saved_state in self.state_names:
-        self.current_state = saved_state
+    if saved_state in self.power_state_machine.state_names:
+        self.power_state_machine.current_state = saved_state
 ```
 
 ## Manager Integration
@@ -132,28 +128,28 @@ def restore_state_from_nvm(self):
 The LED manager responds to power states with appropriate animations:
 
 - **SLEEPING**: All LEDs off
+- **WAKING**: All LEDs off (wake delay state)
 - **ACTIVATING**: Power-on chase animation on main strip, color cycle on built-in pixel
 - **ACTIVE**: Full operational LED effects
 - **IDLE**: Dimmed LED effects for power saving
 - **DEACTIVATING**: Power-off chase animation on main strip, color cycle on built-in pixel
-- **DEEP_SLEEP**: All LEDs off
 
 ### Sound Manager Integration
 
 The sound manager plays appropriate audio for each power state:
 
 - **SLEEPING**: Silent
+- **WAKING**: Silent (wake delay state)
 - **ACTIVATING**: Power-on sound effect
 - **ACTIVE**: Idle ambient sounds
 - **IDLE**: Ambient sounds (if configured)
 - **DEACTIVATING**: Power-off sound effect
-- **DEEP_SLEEP**: Silent
 
 ### Sensor Manager Integration
 
 The sensor manager coordinates with the power state machine:
 
-- **Sleep Mode**: Releases switch pin for alarm use
+- **Sleep Mode**: Releases switch pin for alarm use (handled by code.py)
 - **Wake Mode**: Restores switch pin for normal operation
 - **Motion Detection**: Updates inactivity timer and triggers state transitions
 
@@ -171,14 +167,14 @@ IDLE_TICK_DELAY = 0.1    # Slower response for idle state (100ms) - power saving
 ### Hardware Configuration
 
 ```python
-POWER_PIN = board.D9      # Pin for alarm wake-up functionality
-SWITCH_PIN = board.D9     # Same pin used for button detection and alarm
-ACTIVITY_PIN = board.D6   # Second button for activity functions
+PROP_WING_PIN = board.D10  # Pin that controls power to the prop wing board
+POWER_BUTTON_PIN = board.D9 # Pin for power button detection and alarm wake-up
+ACTIVITY_PIN = board.D6    # Second button for activity functions
 ```
 
 ## Main Loop Integration
 
-The power state machine is integrated into the main loop as the first processing step:
+The power state machine is integrated into the main loop as the first processing step, with sleep handling moved to code.py:
 
 ```python
 def run(self):
@@ -190,7 +186,7 @@ def run(self):
         # Update power state machine FIRST
         new_state = self.power_state_machine.process_tick(old_state, new_state)
         
-        # Check if we should enter sleep mode
+        # Check if we should enter sleep mode (handled by code.py)
         if self._should_enter_sleep():
             self._enter_sleep_mode()
             continue
@@ -200,13 +196,15 @@ def run(self):
         self._adaptive_sleep()
 ```
 
+**Sleep Handling**: The `_should_enter_sleep()` and `_enter_sleep_mode()` methods in code.py handle deep sleep transitions based on inactivity timeout during SLEEPING state.
+
 ## Event Handling
 
 ### Power Button Events
 
-- **SLEEPING → ACTIVATING**: Start power-on sequence
+- **SLEEPING → WAKING**: Start wake sequence
 - **ACTIVE/IDLE → DEACTIVATING**: Start power-off sequence
-- **DEEP_SLEEP → ACTIVATING**: Wake from deep sleep and start activation
+- **Deep Sleep Recovery**: Wake from deep sleep and start activation (handled by code.py)
 
 ### Motion Events
 
@@ -216,7 +214,7 @@ def run(self):
 ### Timeout Events
 
 - **ACTIVE → IDLE**: No motion detected for IDLE_TIMEOUT
-- **SLEEPING → DEEP_SLEEP**: No activity for DEEP_SLEEP_TIMEOUT
+- **SLEEPING → Deep Sleep**: No activity for DEEP_SLEEP_TIMEOUT (handled by code.py)
 
 ## Error Handling
 
@@ -229,20 +227,27 @@ The power state machine includes comprehensive error handling:
 
 ## Benefits
 
+### Simplified Architecture
+- **Focused State Machine**: PowerStateMachine focuses only on state tracking and transitions
+- **Separated Sleep Handling**: Sleep functionality moved to code.py for better control
+- **Cleaner Code**: Reduced complexity in state machine logic
+
 ### Power Efficiency
-- **Light Sleep**: Quick wake-up with minimal power consumption
-- **Deep Sleep**: Maximum battery life during extended inactivity
+- **Deep Sleep**: Maximum battery life during extended inactivity (handled by code.py)
 - **Adaptive Timing**: Slower processing in IDLE state for power saving
+- **State Persistence**: Proper state recovery after deep sleep
 
 ### System Stability
 - **Clear State Transitions**: Prevents invalid state combinations
 - **Synchronization**: Ensures smooth power-on/off sequences
 - **Error Recovery**: Graceful handling of hardware failures
+- **Better Sleep Control**: Sleep handling in main loop allows for better timing control
 
 ### Maintainability
-- **Modular Design**: Clear separation of concerns
+- **Modular Design**: Clear separation of concerns between state tracking and sleep handling
 - **Event-Driven**: Clean integration with existing systems
 - **Extensible**: Easy to add new states or behaviors
+- **Simplified Logic**: Easier to understand and debug
 
 ## Debugging and Monitoring
 

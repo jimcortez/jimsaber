@@ -129,6 +129,22 @@ def mix_colors(color1, color2, weight2):
         int(color1[2] * weight1 + color2[2] * weight2)
     )
 
+def get_animation_index_from_nvm():
+    """Load animation index from NVM"""
+    try:
+        # Read the saved animation index from NVM
+        saved_index = microcontroller.nvm[0]
+        # Validate the index is within bounds of STRIP_ANIMATIONS config
+        if 0 <= saved_index < len(config.STRIP_ANIMATIONS):
+            print(f"Loaded animation index {saved_index} from NVM")
+            return saved_index
+        else:
+            print(f"Invalid saved index {saved_index}, using default 0")
+            return 0
+    except Exception as e:
+        print(f"Failed to load animation index: {e}, using default 0")
+        return 0
+
 def save_animation_index_to_nvm(animation_index):
     """Save animation index to NVM"""
     try:

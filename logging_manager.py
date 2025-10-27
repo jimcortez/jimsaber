@@ -46,10 +46,10 @@ class LoggingManager:
                 self.last_power_state = new_state.power_state
             
             # Check for mode transitions
-            if new_state.current != self.last_mode:
+            if new_state.swing_hit_state != self.last_mode:
                 mode_names = ["OFF", "IDLE", "SWING", "HIT"]
                 old_mode_name = mode_names[self.last_mode] if self.last_mode is not None and self.last_mode < len(mode_names) else "UNKNOWN"
-                new_mode_name = mode_names[new_state.current] if new_state.current < len(mode_names) else "UNKNOWN"
+                new_mode_name = mode_names[new_state.swing_hit_state] if new_state.swing_hit_state < len(mode_names) else "UNKNOWN"
                 
                 print(f"Mode transition: {old_mode_name} -> {new_mode_name}")
                 
@@ -61,7 +61,7 @@ class LoggingManager:
                     'to': new_mode_name
                 })
                 
-                self.last_mode = new_state.current
+                self.last_mode = new_state.swing_hit_state
             
             # Keep only recent transitions
             if len(self.state_transitions) > self.max_transition_history:
@@ -70,27 +70,36 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log state transition: {e}")
     
-    def log_periodic_state(self, old_state, new_state, power_state_machine):
+    def log_periodic_state(self, old_state, new_state, power_state_machine, sound_manager=None):
         """Log comprehensive state information periodically"""
         try:
             # Get current mode name
             mode_names = ["OFF", "IDLE", "SWING", "HIT"]
-            current_mode = mode_names[new_state.current] if new_state.current < len(mode_names) else "UNKNOWN"
+            current_mode = mode_names[new_state.swing_hit_state] if new_state.swing_hit_state < len(mode_names) else "UNKNOWN"
             
             # Get accelerometer values
-            if new_state.accelerometer_available:
-                acceleration = new_state.cached_acceleration
-                if acceleration is not None:
-                    x, y, z = acceleration
-                    accel_magnitude = math.sqrt(x*x + y*y + z*z)
-                else:
-                    x, y, z, accel_magnitude = 0, 0, 0, 0
+            acceleration = new_state.cached_acceleration
+            if acceleration is not None:
+                x, y, z = acceleration
+                accel_magnitude = math.sqrt(x*x + y*y + z*z)
             else:
                 x, y, z, accel_magnitude = 0, 0, 0, 0
             
             # Get battery voltage
             battery_voltage = getattr(new_state, 'battery_voltage', 0.0)
 
+            # Get audio state from sound manager
+            if sound_manager:
+                effect_sound = sound_manager.effect_sound
+                effect_playing = effect_sound is not None and effect_sound[1] if effect_sound else False
+                effect_name = effect_sound[0] if effect_sound else 'None'
+                idle_sound_open = sound_manager.idle_sound is not None
+                audio_playing = sound_manager.is_playing()
+            else:
+                effect_playing = False
+                effect_name = 'None'
+                idle_sound_open = False
+                audio_playing = False
             
             # Print comprehensive state information
             print("=" * 60)
@@ -100,21 +109,17 @@ class LoggingManager:
             print(f"Power State: {power_state_machine.get_state_name(new_state.power_state)}")
             print(f"Animation Index: {new_state.current_animation_index}")
             print(f"Battery Voltage: {battery_voltage:.2f}V")
-            print(f"Accelerometer Available: {new_state.accelerometer_available}")
-            if new_state.accelerometer_available:
-                print(f"Accelerometer - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}")
-                print(f"Accelerometer Magnitude: {accel_magnitude:.2f}")
-            else:
-                print("Accelerometer - Not available (motion detection disabled)")
-            print(f"Effect Playing: {getattr(new_state, 'effect_playing', False)}")
-            if getattr(new_state, 'effect_playing', False):
-                print(f"Effect Sound: {getattr(new_state, 'effect_sound', 'None')}")
+            print(f"Accelerometer - X: {x:.2f}, Y: {y:.2f}, Z: {z:.2f}")
+            print(f"Accelerometer Magnitude: {accel_magnitude:.2f}")
+            print(f"Effect Playing: {effect_playing}")
+            if effect_playing:
+                print(f"Effect Sound: {effect_name}")
+            print(f"Audio Hardware Playing: {audio_playing}")
+            print(f"Idle Sound File Open: {idle_sound_open}")
             print(f"Color Animation Active: {getattr(new_state, 'color_animation_active', False)}")
             print(f"Power Animation Active: {getattr(new_state, 'power_animation_active', False)}")
             print(f"Status LEDs: {getattr(new_state, 'status_leds', {})}")
             print(f"Builtin Pixel Color: {getattr(new_state, 'builtin_pixel_color', (0, 0, 0))}")
-            print(f"Current Sound: {getattr(new_state, 'current_sound', 'None')}")
-            print(f"Idle Sound Playing: {getattr(new_state, 'idle_sound_playing', False)}")
             
             # Show recent state transitions
             if self.state_transitions:
@@ -128,11 +133,11 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log periodic state: {e}")
     
-    def check_periodic_logging(self, old_state, new_state, power_state_machine):
+    def check_periodic_logging(self, old_state, new_state, power_state_machine, sound_manager=None):
         """Check if it's time to log periodic state information"""
         now = time.monotonic()
         if now - self.last_state_log_time >= config.STATE_LOG_INTERVAL:
-            self.log_periodic_state(old_state, new_state, power_state_machine)
+            self.log_periodic_state(old_state, new_state, power_state_machine, sound_manager)
             self.last_state_log_time = now
     
     def log_event(self, event_name, details=None):
@@ -173,12 +178,12 @@ class LoggingManager:
         except Exception as e:
             print(f"Failed to log error: {e}")
     
-    def process_tick(self, old_state, new_state, power_state_machine=None):
+    def process_tick(self, old_state, new_state, power_state_machine=None, sound_manager=None):
         """Process one tick of logging management - called at end of main loop"""
         # Log state transitions
         self.log_state_transition(old_state, new_state, power_state_machine)
         
         # Check for periodic logging
-        self.check_periodic_logging(old_state, new_state, power_state_machine)
+        self.check_periodic_logging(old_state, new_state, power_state_machine, sound_manager)
         
         return new_state

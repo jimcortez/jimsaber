@@ -154,6 +154,18 @@ ACTIVITY_BUTTON_LED_ANIMATIONS = {
 }
 
 SABER_STATE_ANIMATIONS = {
+    'hit': {
+        "animation_type": "solid",
+        "params": {
+            "color": color.WHITE
+        }
+    },
+    # 'swing': {
+    #     "animation_type": "solid",
+    #     "params": {
+    #         "color": color.GREEN
+    #     }
+    # },
     'activating': {
         "animation_type": "chase",
         "params": {
@@ -169,7 +181,7 @@ SABER_STATE_ANIMATIONS = {
             "speed": 0.1,
             "size": 3,
             "spacing": 2,
-            "color": (0, 0, 0),  # Black for power off
+            "color": (25, 0, 64),  # Black for power off
             "reverse": True
         }
     }
@@ -182,47 +194,58 @@ SOUND_EFFECTS = ['hit', 'swing', 'on', 'off']
 HIT_THRESHOLD = 350
 SWING_THRESHOLD = 125
 
-# Hardware configuration
-NUM_PIXELS = 114
-NEOPIXEL_PIN = board.D5  # Main NeoPixel strip
-BUILTIN_NEOPIXEL_PIN = board.NEOPIXEL  # Built-in NeoPixel on Feather M4
-POWER_PIN = board.D9  # Pin for alarm wake-up functionality (same as button pin)
-# Note: D9 is used for both button detection and alarm wake-up
-SWITCH_PIN = board.D9
-ACTIVITY_PIN = board.D6  # Second button for activity functions
-VOLTAGE_MONITOR_PIN = board.VOLTAGE_MONITOR  # Battery voltage monitoring
+# Motion effect durations (in seconds)
+HIT_DURATION = 0.5  # How long the hit effect lasts (white flash)
+SWING_DURATION = 0.3  # How long the swing effect lasts
 
+PROP_WING_PIN = board.D10  # Pin that controls power to the prop wing board
+
+# Note: D9 is used for both button detection and alarm wake-up
+POWER_BUTTON_PIN = board.D9
 # Power button RGB LED pins (high-current MOSFET drivers)
 POWER_BUTTON_LED_RED = board.D11   # Red channel for power button LED
 POWER_BUTTON_LED_GREEN = board.D12 # Green channel for power button LED
 POWER_BUTTON_LED_BLUE = board.D13  # Blue channel for power button LED
+POWER_BUTTON_LED_BRIGHTNESS = 0.8  # Power button RGB LED brightness (high-current capable)
+
 
 # Activity button LED pin (monochrome PWM controlled)
-ACTIVITY_BUTTON_LED_PIN = board.D10  # Pin for activity button LED
+ACTIVITY_PIN = board.A3  # Second button for activity functions (analog input)
+ACTIVITY_BUTTON_THRESHOLD = 32768  # Analog threshold for button press (0-65535, ~1.65V)
+ACTIVITY_BUTTON_LED_PIN = board.A4  # Pin for activity button LED
+ACTIVITY_BUTTON_LED_BRIGHTNESS = 0.6  # Activity button LED brightness (monochrome PWM)
 
 # NeoPixel brightness levels (0.0 to 1.0)
+NUM_PIXELS = 150
+NEOPIXEL_PIN = board.D5  # Main NeoPixel strip
 STRIP_BRIGHTNESS = 1.0  # Main NeoPixel strip brightness
+
+BUILTIN_NEOPIXEL_PIN = board.NEOPIXEL  # Built-in NeoPixel on Feather M4
 BUILTIN_PIXEL_BRIGHTNESS = 0.5  # Built-in NeoPixel brightness (lower for status indication)
-POWER_BUTTON_LED_BRIGHTNESS = 0.8  # Power button RGB LED brightness (high-current capable)
-ACTIVITY_BUTTON_LED_BRIGHTNESS = 0.6  # Activity button LED brightness (monochrome PWM)
+
+VOLTAGE_MONITOR_PIN = board.VOLTAGE_MONITOR  # Battery voltage monitoring
 
 # Timing constants
 POWER_ON_DURATION = 1.7
 POWER_OFF_DURATION = 1.15
+ACTIVATION_DURATION = 1.7  # User-configurable duration for power on/off animations and sounds
+DEACTIVATION_DURATION = 1.15  # User-configurable duration for power off animations and sounds
 DEBOUNCE_TIME = 0.2
 LONG_PRESS_TIME = 0.5  # Time for long press detection
+DOUBLE_PRESS_TIMEOUT = 0.5  # Maximum time between presses for double-press detection
 ACCEL_READ_INTERVAL = 0.01  # 100Hz max for accelerometer reading
 STATE_LOG_INTERVAL = 30.0  # Log state every 30 seconds
 
 # Power state machine settings
+ENABLE_DEEP_SLEEP = False  # Enable deep sleep mode (set to False to use light sleep only)
 LIGHT_SLEEP_TIMEOUT = 60.0  # 1 minute of sleeping before light sleep
 DEEP_SLEEP_TIMEOUT = 30 # 300.0  # 5 minutes of inactivity before deep sleep
 IDLE_TIMEOUT = 10.0  # Time before transitioning from ACTIVE to IDLE
 AUTO_SHUTDOWN_TIMEOUT = 300.0  # 5 minute of being IDLE before auto-shutdown
+WAKING_DURATION = 0.1  # 100ms delay for WAKING state to stabilize before activation
 
 # Hardware stabilization and timing
 HARDWARE_STABILIZATION_DELAY = 0.1  # Delay for hardware to stabilize on startup
-LED_ANIMATION_DELAY = 0.01  # Small delay in LED animations to prevent overwhelming system
 
 # Main loop timing
 ACTIVE_TICK_DELAY = 0.01  # Fast response for active states (10ms)

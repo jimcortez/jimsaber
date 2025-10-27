@@ -2,12 +2,9 @@
 
 import time
 import neopixel
-import board
 import config
-from lightsaber_state import LightsaberState
-from adafruit_led_animation.group import AnimationGroup
-from led_utils import create_animation_from_config, mix_colors, save_animation_index_to_nvm
-import microcontroller
+from led_utils import create_animation_from_config, save_animation_index_to_nvm
+from state_machines.state_machine_base import StateLock
 
 class SaberLEDManager:
     """Manages saber LED strip animations and effects"""
@@ -30,10 +27,6 @@ class SaberLEDManager:
         # Initialize animations
         self._setup_animations()
         
-        # Animation group tracking
-        self.active_animations = []
-        self.animation_group = None
-        
         # Current animation state
         self.current_animation = None
         self.animation_active = False
@@ -42,6 +35,9 @@ class SaberLEDManager:
         # Power animation state
         self.power_animation_active = False
         self.power_animation_start_time = 0.0
+
+        self.activation_lock = None
+        self.deactivation_lock = None
     
     
     def _setup_animations(self):
@@ -53,15 +49,28 @@ class SaberLEDManager:
             self.animations.append(animation)
         
         # Create Chase animations for power on/off using SABER_STATE_ANIMATIONS config
-        self.chase_on = create_animation_from_config(
+        self.activate_state_animation = create_animation_from_config(
             config.SABER_STATE_ANIMATIONS['activating'], 
             self.strip
         )
         
-        self.chase_off = create_animation_from_config(
+        self.deactivate_state_animation = create_animation_from_config(
             config.SABER_STATE_ANIMATIONS['deactivating'], 
             self.strip
         )
+
+        self.hit_effect_animation = create_animation_from_config(
+            config.SABER_STATE_ANIMATIONS['hit'], 
+            self.strip
+        )
+
+        if config.SABER_STATE_ANIMATIONS.get('swing', False):
+            self.swing_effect_animation = create_animation_from_config(
+                config.SABER_STATE_ANIMATIONS['swing'], 
+                self.strip
+            )
+        else:
+            self.swing_effect_animation = None
     
     
     def get_current_animation(self, new_state):
@@ -90,195 +99,144 @@ class SaberLEDManager:
                 print(f"Animation changed to {animation_name}")
         
         # Save the new animation index to NVM
-        self.save_animation_index(new_state)
+        save_animation_index_to_nvm(new_state.current_animation_index)
         
         return current_animation
     
-    def save_animation_index(self, new_state):
-        """Save current animation index to NVM"""
-        save_animation_index_to_nvm(new_state.current_animation_index)
+    def _handle_hit_state(self, new_state):
+        """Handle led behavior for HIT state"""
+        if not new_state.saber_effect_active:
+            self.current_animation = self.hit_effect_animation
+            new_state.saber_effect = 'hit'
+            new_state.saber_effect_active = True
+            new_state.saber_effect_start_time = time.monotonic()
+            print("Started hit led effect")
+        elif new_state.saber_effect == 'hit':
+            elapsed = time.monotonic() - new_state.saber_effect_start_time
+            if elapsed >= config.HIT_DURATION:
+                new_state.saber_effect = None
+                new_state.saber_effect_active = False
+                print("Hit led effect completed (duration-based)")
+                self.current_animation = None
+
+    def _handle_swing_state(self, new_state):
+        """Handle led behavior for SWING state"""
+        if self.swing_effect_animation:
+            if not new_state.saber_effect_active:
+                self.current_animation = self.swing_effect_animation
+                new_state.saber_effect = 'swing'
+                new_state.saber_effect_active = True
+                new_state.saber_effect_start_time = time.monotonic()
+                print("Started swing led effect")
+        elif new_state.saber_effect == 'swing':
+            elapsed = time.monotonic() - new_state.saber_effect_start_time
+            if elapsed >= config.SWING_DURATION:
+                new_state.saber_effect = None
+                new_state.saber_effect_active = False
+                print("Swing led effect completed (duration-based)")
+                self.current_animation = None
+
+    def _handle_activation_state(self, new_state, power_state_machine):
+        """Handle saber LED behavior for ACTIVATING state with state lock management"""
+        # Create and add state lock for activation sound if not already created
+        if self.activation_lock is None:
+            self.activation_lock = StateLock(
+                name="activation_saber_animation",
+                blocked=True,
+                timeout=config.ACTIVATION_DURATION,  # Add buffer time
+                valid_states=[power_state_machine.ACTIVATING]
+            )
+            power_state_machine.add_state_lock(self.activation_lock)
+            print("Created activation saber animation state lock")
+
+        if self.activation_lock.blocked:
+            self.current_animation = self.activate_state_animation
+
+            if not new_state.power_animation_active:
+                new_state.power_animation_active = True
+                new_state.power_animation_start_time = time.monotonic()
+                print("Started power-on LED animation")
+            # Check if power-off animation is complete based on DEACTIVATION_DURATION
+            elif new_state.power_animation_active:
+                elapsed = time.monotonic() - new_state.power_animation_start_time
+                if elapsed >= config.ACTIVATION_DURATION:
+                    new_state.power_animation_active = False
+                    self.current_animation = None
+                    self.activation_lock.unlock()
     
-    def load_animation_index(self, new_state):
-        """Load animation index from NVM"""
-        new_state.current_animation_index = self._load_animation_index_from_nvm()
-    
-    def _load_animation_index_from_nvm(self):
-        """Load animation index from NVM"""
-        try:
-            # Read the saved animation index from NVM
-            saved_index = microcontroller.nvm[0]
-            # Validate the index is within bounds of STRIP_ANIMATIONS config
-            if 0 <= saved_index < len(config.STRIP_ANIMATIONS):
-                print(f"Loaded animation index {saved_index} from NVM")
-                return saved_index
-            else:
-                print(f"Invalid saved index {saved_index}, using default 0")
-                return 0
-        except Exception as e:
-            print(f"Failed to load animation index: {e}, using default 0")
-            return 0
-    
-    @staticmethod
-    def load_animation_index_static():
-        """Load animation index from NVM during initialization"""
-        try:
-            # Read the saved animation index from NVM
-            saved_index = microcontroller.nvm[0]
-            # Validate the index is within bounds of STRIP_ANIMATIONS config
-            if 0 <= saved_index < len(config.STRIP_ANIMATIONS):
-                print(f"Loaded animation index {saved_index} from NVM")
-                return saved_index
-            else:
-                print(f"Invalid saved index {saved_index}, using default 0")
-                return 0
-        except Exception as e:
-            print(f"Failed to load animation index: {e}, using default 0")
-            return 0
-    
-    def stop_color_animation(self, new_state):
-        """Stop the current animation and return to idle color"""
-        if new_state.color_animation_active:
-            new_state.color_animation_active = False
-            # Return to idle color
-            if new_state.current == new_state.IDLE:
-                self.strip.fill(config.IDLE_COLOR)
-                self.strip.show()
-            print("Animation stopped")
-    
-    def _update_active_animations(self, animations_list):
-        """Update the list of active animations and recreate the AnimationGroup if needed"""
-        # Check if the animations list has changed
-        if animations_list != self.active_animations:
-            self.active_animations = animations_list
-            # Create new AnimationGroup with the current active animations
-            if self.active_animations:
-                self.animation_group = AnimationGroup(*self.active_animations)
-            else:
-                self.animation_group = None
-            print(f"Updated active saber animations: {len(self.active_animations)} animations")
-    
-    def _get_current_active_animations(self, new_state):
-        """Determine which saber animations should be active based on current state"""
-        active_animations = []
-        
-        # Add strip animation if color animation is active
-        if new_state.color_animation_active:
-            current_animation = self.get_current_animation(new_state)
-            active_animations.append(current_animation)
-        
-        # Add power animation if power animation is active
-        if new_state.power_animation_active:
-            if new_state.has_event(new_state.POWER_OFF_PROGRESS):
-                active_animations.append(self.chase_off)
-            else:
-                active_animations.append(self.chase_on)
-        
-        return active_animations
-    
+    def _handle_deactivation_state(self, new_state, power_state_machine):
+        """Handle saber LED behavior for DEACTIVATING state with state lock management"""
+        # Create and add state lock for activation sound if not already created
+        if self.deactivation_lock is None:
+            self.deactivation_lock = StateLock(
+                name="deactivation_saber_animation",
+                blocked=True,
+                timeout=config.DEACTIVATION_DURATION + 2.0,  # Add buffer time
+                valid_states=[power_state_machine.DEACTIVATING]
+            )
+            power_state_machine.add_state_lock(self.deactivation_lock)
+            print("Created deactivation saber animation state lock")
+
+        if self.deactivation_lock.blocked:
+            self.current_animation = self.deactivate_state_animation
+
+            if not new_state.power_animation_active:
+                new_state.power_animation_active = True
+                new_state.power_animation_start_time = time.monotonic()
+                print("Started power-off LED animation")
+            # Check if power-off animation is complete based on DEACTIVATION_DURATION
+            elif new_state.power_animation_active:
+                elapsed = time.monotonic() - new_state.power_animation_start_time
+                if elapsed >= config.DEACTIVATION_DURATION:
+                    new_state.power_animation_active = False
+                    self.current_animation = None
+                    self.deactivation_lock.unlock()
+
     def process_tick(self, old_state, new_state, power_state_machine=None):
         """Process one tick of saber LED management based on state transitions"""
         
         # Handle power state machine integration
-        if power_state_machine:
-            self.handle_power_state_behavior(new_state, power_state_machine)
+        if new_state.power_state == power_state_machine.ACTIVATING:
+            self._handle_activation_state(new_state, power_state_machine)
+        elif (old_state.power_state == power_state_machine.ACTIVATING and 
+            new_state.power_state != power_state_machine.ACTIVATING and 
+            self.activation_lock):
+            # Clean up activation lock if transitioning away from ACTIVATING
+            print("Transitioning away from ACTIVATING - cleaning up activation lock")
+            self.activation_lock.unlock()
+            power_state_machine.remove_state_lock("activation_saber_animation")
+            self.activation_lock = None
+
+        if new_state.power_state == power_state_machine.DEACTIVATING:
+            self._handle_deactivation_state(new_state, power_state_machine)
+        elif (old_state.power_state == power_state_machine.DEACTIVATING and 
+            new_state.power_state != power_state_machine.DEACTIVATING and 
+            self.deactivation_lock):
+            # Clean up deactivation lock if transitioning away from DEACTIVATING
+            print("Transitioning away from DEACTIVATING - cleaning up deactivation lock")
+            self.deactivation_lock.unlock()
+            power_state_machine.remove_state_lock("deactivation_saber_animation")
+            self.deactivation_lock = None
+
+        if new_state.power_state == power_state_machine.ACTIVE:
+            # Handle motion events
+            if new_state.has_event(new_state.HIT_START) or new_state.saber_effect == 'hit':
+                self._handle_hit_state(new_state)
+            elif new_state.has_event(new_state.SWING_START) or new_state.saber_effect == 'swing':
+                self._handle_swing_state(new_state)
+
+            if not self.current_animation:
+                self.current_animation = self.get_current_animation(new_state)
         
-        # Handle motion events
-        if new_state.has_event(new_state.HIT_START):
-            new_state.active_color = config.HIT_COLOR
-            new_state.previous = new_state.current
-            new_state.current = new_state.HIT
-            new_state.trigger_time = time.monotonic()
-        elif new_state.has_event(new_state.SWING_START):
-            new_state.active_color = config.PRIMARY_COLOR
-            new_state.previous = new_state.current
-            new_state.current = new_state.SWING
-            new_state.trigger_time = time.monotonic()
-        elif new_state.has_event(new_state.IDLE_START):
-            new_state.previous = new_state.current
-            new_state.current = new_state.IDLE
-            new_state.active_color = None
-        
-        # Handle button events
-        if new_state.has_event(new_state.BUTTON_SHORT_PRESS):
-            if not new_state.color_animation_active:
-                new_state.add_event(new_state.ANIMATION_CYCLE)
-        
-        # Handle animation cycling
-        if new_state.has_event(new_state.ANIMATION_CYCLE):
-            new_state.current_animation_index = (new_state.current_animation_index + 1) % len(self.animations)
-            new_state.color_animation_active = True
-            new_state.animation_start_time = time.monotonic()
-            self.save_animation_index(new_state)
-        
-        # Handle color animation
-        if new_state.color_animation_active:
-            elapsed = time.monotonic() - new_state.animation_start_time
-            if elapsed >= config.ANIMATION_DURATION:
-                new_state.color_animation_active = False
-        
-        # Update active animations list and create AnimationGroup
-        current_active_animations = self._get_current_active_animations(new_state)
-        self._update_active_animations(current_active_animations)
-        
-        # Handle non-animation LED displays (swing/hit effects, idle state)
-        if not new_state.power_animation_active and not new_state.color_animation_active:
-            if new_state.current > new_state.IDLE and new_state.active_color:
-                # Handle active mode (swing/hit) with color blending
-                if new_state.current_sound:  # If sound is playing
-                    blend = time.monotonic() - new_state.trigger_time
-                    if new_state.current == new_state.SWING:
-                        blend = abs(0.5 - blend) * 2.0  # ramp up, down
-                    self.strip.fill(mix_colors(new_state.active_color, config.IDLE_COLOR, blend))
-                    self.strip.show()
-                else:
-                    # No sound, return to idle
-                    self.strip.fill(config.IDLE_COLOR)
-                    self.strip.show()
-                    new_state.current = new_state.IDLE
-            else:
-                # Idle state
-                if new_state.current == new_state.IDLE:
-                    self.strip.fill(config.IDLE_COLOR)
-                    self.strip.show()
-        
-        # Animate all active animations using the AnimationGroup
-        if self.animation_group:
-            self.animation_group.animate()
+            # Handle button events
+            if new_state.has_event(new_state.ACTIVITY_BUTTON_SHORT_PRESS):
+                print("Activity button pressed - cycling animation")
+                self.current_animation = self.cycle_animation(new_state)
+
+            if not self.current_animation:
+                self.current_animation = self.get_current_animation(new_state)
+
+        if self.current_animation:
+            self.current_animation.animate()
         
         return new_state
-    
-    def handle_power_state_behavior(self, new_state, power_state_machine):
-        """Handle saber LED behavior based on power state machine states"""
-        if not hasattr(new_state, 'power_state') or new_state.power_state is None:
-            return
-        
-        if new_state.power_state == power_state_machine.SLEEPING:
-            # SLEEPING: Turn off LEDs
-            self.strip.fill(0)
-            self.strip.show()
-            
-        elif new_state.power_state == power_state_machine.ACTIVATING:
-            # ACTIVATING: Run power-on animation
-            if not new_state.power_animation_active:
-                new_state.power_animation_active = True
-                new_state.power_animation_start_time = time.monotonic()
-            
-        elif new_state.power_state == power_state_machine.ACTIVE:
-            # ACTIVE: Normal operational LEDs
-            pass  # LED behavior handled by AnimationGroup system
-            
-        elif new_state.power_state == power_state_machine.IDLE:
-            # IDLE: Dim/static LEDs
-            self.strip.fill(config.IDLE_COLOR)
-            self.strip.show()
-            
-        elif new_state.power_state == power_state_machine.DEACTIVATING:
-            # DEACTIVATING: Run power-off animation
-            if not new_state.power_animation_active:
-                new_state.power_animation_active = True
-                new_state.power_animation_start_time = time.monotonic()
-            
-        elif new_state.power_state == power_state_machine.DEEP_SLEEP:
-            # DEEP_SLEEP: Turn off LEDs
-            self.strip.fill(0)
-            self.strip.show()

@@ -5,23 +5,46 @@ import alarm
 import config
 from .state_machine_base import StateMachineBase
 
+class PowerStateMachineState:
+    BOOTING = 0
+    SLEEPING = 1
+    WAKING = 2
+    ACTIVATING = 3
+    ACTIVE = 4
+    IDLE = 5
+    DEACTIVATING = 6
+
+    state_names = {
+        BOOTING: "BOOTING",
+        SLEEPING: "SLEEPING",
+        WAKING: "WAKING",
+        ACTIVATING: "ACTIVATING", 
+        ACTIVE: "ACTIVE",
+        IDLE: "IDLE",
+        DEACTIVATING: "DEACTIVATING"
+    }
+
+    def get_state_name(state):
+        """Get the name of a power state"""
+        return PowerStateMachineState.state_names.get(state, f"UNKNOWN({state})")
+
 class PowerStateMachine(StateMachineBase):
     """Power state machine managing lightsaber power states"""
     
     # Power states
     BOOTING = 0
     SLEEPING = 1
-    ACTIVATING = 2
-    ACTIVE = 3
-    IDLE = 4
-    DEACTIVATING = 5
-    DEEP_SLEEP = 6
-    LIGHT_SLEEP = 7
+    WAKING = 2
+    ACTIVATING = 3
+    ACTIVE = 4
+    IDLE = 5
+    DEACTIVATING = 6
     
     def __init__(self, logging_manager=None):
         """Initialize the power state machine"""
         super().__init__()
         self.logging_manager = logging_manager
+        self._last_logged_state = self.BOOTING
         
         # Initialize to BOOTING state
         self.current_state = self.BOOTING
@@ -34,16 +57,21 @@ class PowerStateMachine(StateMachineBase):
         # Inactivity tracking
         self.inactivity_timer = 0.0
         
+        
+        # WAKING state tracking
+        self.waking_start_time = 0.0
+        self.waking_duration = config.WAKING_DURATION  # Delay for WAKING state to stabilize
+        self._waking_initialized = False
+        
         # State names for debugging
         self.state_names = {
             self.BOOTING: "BOOTING",
             self.SLEEPING: "SLEEPING",
+            self.WAKING: "WAKING",
             self.ACTIVATING: "ACTIVATING", 
             self.ACTIVE: "ACTIVE",
             self.IDLE: "IDLE",
-            self.DEACTIVATING: "DEACTIVATING",
-            self.DEEP_SLEEP: "DEEP_SLEEP",
-            self.LIGHT_SLEEP: "LIGHT_SLEEP"
+            self.DEACTIVATING: "DEACTIVATING"
         }
         
         # Initialize inactivity timer
@@ -60,45 +88,15 @@ class PowerStateMachine(StateMachineBase):
         # Define valid transitions
         valid_transitions = {
             self.BOOTING: [self.SLEEPING],
-            self.SLEEPING: [self.ACTIVATING, self.LIGHT_SLEEP],
-            self.LIGHT_SLEEP: [self.ACTIVATING, self.DEEP_SLEEP],
+            self.SLEEPING: [self.WAKING],
+            self.WAKING: [self.ACTIVATING],
             self.ACTIVATING: [self.ACTIVE],
             self.ACTIVE: [self.IDLE, self.DEACTIVATING],
             self.IDLE: [self.ACTIVE, self.DEACTIVATING],
-            self.DEACTIVATING: [self.SLEEPING],
-            self.DEEP_SLEEP: [self.SLEEPING, self.ACTIVATING]
+            self.DEACTIVATING: [self.SLEEPING]
         }
         
         return target_state in valid_transitions.get(current, [])
-    
-    def is_activation_complete(self):
-        """Check if both LED and sound animations are complete for activation"""
-        return (self.led_animation_complete and 
-                self.sound_animation_complete)
-    
-    def is_deactivation_complete(self):
-        """Check if both LED and sound animations are complete for deactivation"""
-        return (self.led_animation_complete and 
-                self.sound_animation_complete)
-    
-    def set_led_animation_complete(self, complete):
-        """Set LED animation completion status"""
-        self.led_animation_complete = complete
-        if self.logging_manager:
-            self.logging_manager.log_animation_event("LED", complete)
-    
-    def set_sound_animation_complete(self, complete):
-        """Set sound animation completion status"""
-        self.sound_animation_complete = complete
-        if self.logging_manager:
-            self.logging_manager.log_animation_event("Sound", complete)
-    
-    def reset_animation_flags(self):
-        """Reset animation completion flags"""
-        self.led_animation_complete = False
-        self.sound_animation_complete = False
-        if self.logging_manager:
-            self.logging_manager.log_animation_reset()
     
     def check_inactivity_timeout(self):
         """Check if inactivity timeout reached for deep sleep transition"""
@@ -107,109 +105,24 @@ class PowerStateMachine(StateMachineBase):
                 return True
         return False
     
-    def check_light_sleep_timeout(self):
-        """Check if light sleep timeout reached for transitioning from SLEEPING to LIGHT_SLEEP"""
-        if self.current_state == self.SLEEPING:
-            if time.monotonic() - self.inactivity_timer > config.LIGHT_SLEEP_TIMEOUT:
-                return True
-        return False
-    
     def update_inactivity_timer(self):
         """Update the inactivity timer (call when activity is detected)"""
         self.inactivity_timer = time.monotonic()
-    
-    def enter_light_sleep(self):
-        """Enter light sleep mode for LIGHT_SLEEP state"""
-        try:
-            # Create button alarm for wake-up on button press
-            button_alarm = alarm.pin.PinAlarm(pin=config.POWER_PIN, value=False, pull=True)
-            
-            # Create timer alarm to wake up after DEEP_SLEEP_TIMEOUT for deep sleep transition
-            timer_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + config.DEEP_SLEEP_TIMEOUT)
-            
-            # Sleep until either button is pressed or timeout is reached
-            alarm.light_sleep_until_alarms(button_alarm, timer_alarm)
-            print("Woke from light sleep")
-        except Exception as e:
-            print(f"Light sleep error: {e}")
-            # If light sleep fails, try without pull-up
-            try:
-                button_alarm = alarm.pin.PinAlarm(pin=config.POWER_PIN, value=False)
-                timer_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + config.DEEP_SLEEP_TIMEOUT)
-                alarm.light_sleep_until_alarms(button_alarm, timer_alarm)
-                print("Woke from light sleep (retry)")
-            except Exception as e2:
-                print(f"Light sleep retry error: {e2}")
-    
-    
-    def was_woken_by_timer(self):
-        """Check if the system was woken by a timer alarm (indicating deep sleep transition)"""
-        try:
-            # Check if we have a timer alarm that woke us up
-            if alarm.wake_alarm is not None:
-                print(f"Wake alarm type: {type(alarm.wake_alarm)}")
-                is_timer = isinstance(alarm.wake_alarm, alarm.time.TimeAlarm)
-                print(f"Was woken by timer: {is_timer}")
-                return is_timer
-            else:
-                print("No wake alarm detected")
-                return False
-        except Exception as e:
-            print(f"Error checking wake alarm: {e}")
-            return False
-    
-    def enter_deep_sleep(self):
-        """Enter deep sleep mode for DEEP_SLEEP state"""
-        # Save state to non-volatile memory
-        self.save_state_to_nvm()
-        
-        # Create button alarm for wake-up on D10 (separate from button pin)
-        button_alarm = alarm.pin.PinAlarm(pin=config.POWER_PIN, value=False, pull=True)
-        
-        # Exit program and enter deep sleep
-        #TODO: deep sleep seems to fail with invalid pin
-        #alarm.exit_and_deep_sleep_until_alarms(button_alarm)
-        alarm.light_sleep_until_alarms(button_alarm)
-    
-    def save_state_to_nvm(self):
-        """Save current state to non-volatile memory for deep sleep recovery"""
-        try:
-            import microcontroller
-            # Save current state as a single byte
-            microcontroller.nvm[1] = self.current_state
-            print(f"Saved power state {self.get_state_name(self.current_state)} to NVM")
-        except Exception as e:
-            print(f"Failed to save state to NVM: {e}")
-    
-    def restore_state_from_nvm(self):
-        """Restore state from non-volatile memory after deep sleep restart"""
-        try:
-            import microcontroller
-            # Read saved state from NVM
-            saved_state = microcontroller.nvm[1]
-            if saved_state in self.state_names:
-                self.current_state = saved_state
-                self.state_start_time = time.monotonic()
-                print(f"Restored power state {self.get_state_name(saved_state)} from NVM")
-                return True
-        except Exception as e:
-            print(f"Failed to restore state from NVM: {e}")
-        return False
+
     
     def handle_power_button_press(self):
         """Handle power button press based on current state"""
-        if self.current_state == self.SLEEPING or self.current_state == self.LIGHT_SLEEP:
-            # Start activation sequence
-            self.reset_animation_flags()
-            self.transition_to(self.ACTIVATING)
+        print(f"handle_power_button_press called with current_state: {self.get_state_name(self.current_state)}")
+        if self.current_state == self.SLEEPING:
+            # Start wake sequence
+            print("Starting wake sequence from SLEEPING")
+            self.transition_to(self.WAKING)
         elif self.current_state == self.ACTIVE or self.current_state == self.IDLE:
             # Start deactivation sequence
-            self.reset_animation_flags()
+            print("Starting deactivation sequence from ACTIVE/IDLE")
             self.transition_to(self.DEACTIVATING)
-        elif self.current_state == self.DEEP_SLEEP:
-            # Wake from deep sleep and start activation
-            self.reset_animation_flags()
-            self.transition_to(self.ACTIVATING)
+        else:
+            print(f"No action taken for power button press in state: {self.get_state_name(self.current_state)}")
     
     def handle_motion_detected(self):
         """Handle motion detection based on current state"""
@@ -219,7 +132,7 @@ class PowerStateMachine(StateMachineBase):
         elif self.current_state == self.ACTIVE:
             # Update state start time to reset idle timeout
             self.state_start_time = time.monotonic()
-        elif self.current_state in [self.SLEEPING, self.LIGHT_SLEEP]:
+        elif self.current_state == self.SLEEPING:
             # Update inactivity timer
             self.update_inactivity_timer()
     
@@ -233,64 +146,33 @@ class PowerStateMachine(StateMachineBase):
         """Handle auto-shutdown timeout when device has been IDLE for too long"""
         if self.current_state == self.IDLE:
             # Transition to deactivating state for auto-shutdown
-            self.reset_animation_flags()
             self.transition_to(self.DEACTIVATING)
-    
-    def update(self):
-        """Update the power state machine - call this in main loop"""
-        # Check for booting to sleeping transition (happens after first tick)
+
+    def _handle_auto_transition(self):
+        # Update power state machine
         if self.current_state == self.BOOTING:
+            print("Transitioning from BOOTING to SLEEPING")
             self.transition_to(self.SLEEPING)
-            return  # Don't check other conditions immediately after state transition
         
-        # Check for light sleep timeout (SLEEPING -> LIGHT_SLEEP)
-        if self.check_light_sleep_timeout():
-            print("Light sleep timeout reached - transitioning to LIGHT_SLEEP")
-            self.transition_to(self.LIGHT_SLEEP)
-            return
-        
-        # Check if we were woken by timer alarm (indicating deep sleep transition from LIGHT_SLEEP)
-        if self.current_state == self.LIGHT_SLEEP and self.was_woken_by_timer():
-            print("Timer wake detected - transitioning to DEEP_SLEEP")
-            self.transition_to(self.DEEP_SLEEP)
-            return
-        
-        # Check for deep sleep timeout (fallback check) - only if we've been in light sleep long enough
-        if (self.current_state == self.LIGHT_SLEEP and 
-            time.monotonic() - self.inactivity_timer > config.DEEP_SLEEP_TIMEOUT):
-            self.transition_to(self.DEEP_SLEEP)
-            return
-        
-        # Check for activation completion
-        if (self.current_state == self.ACTIVATING and 
-            self.is_activation_complete()):
+        # Handle WAKING state auto-transition to ACTIVATING
+        elif self.current_state == self.WAKING:
+            self.transition_to(self.ACTIVATING)
+
+        #auto-transition to ACTIVE from ACTIVATING, locks will block if needed
+        elif self.current_state == self.ACTIVATING :
             self.transition_to(self.ACTIVE)
         
-        # Check for deactivation completion
-        if (self.current_state == self.DEACTIVATING and 
-            self.is_deactivation_complete()):
+        #auto-transition to SLEEPING from DEACTIVATING, locks will block if needed
+        elif self.current_state == self.DEACTIVATING:
             self.transition_to(self.SLEEPING)
-    
-    
-    def should_enter_sleep(self):
-        """Check if the state machine should enter sleep mode"""
-        return self.current_state in [self.LIGHT_SLEEP, self.DEEP_SLEEP]
-    
-    def should_enter_light_sleep(self):
-        """Check if the state machine should enter light sleep"""
-        return self.current_state == self.LIGHT_SLEEP
-    
-    def should_enter_deep_sleep(self):
-        """Check if the state machine should enter deep sleep"""
-        return self.current_state == self.DEEP_SLEEP
     
     def process_tick(self, old_state, new_state):
         """Process one tick of power state machine and handle power-related events"""
-        # Update power state machine
-        self.update()
+        # Check for pending transitions first
+        self.check_pending_transition()
         
         # Handle power button events
-        if new_state.has_event(new_state.BUTTON_SHORT_PRESS):
+        if new_state.has_event(new_state.POWER_BUTTON_SHORT_PRESS):
             self.handle_power_button_press()
         
         # Handle motion events
@@ -307,29 +189,32 @@ class PowerStateMachine(StateMachineBase):
             time.monotonic() - self.state_start_time > config.AUTO_SHUTDOWN_TIMEOUT):
             self.handle_idle_auto_shutdown_timeout()
         
-        # Update power enabled state based on power state machine
-        if self.current_state in [
-            self.ACTIVATING,
-            self.ACTIVE,
-            self.IDLE,
-            self.DEACTIVATING
-        ]:
-            new_state.power_enabled = True
+        # Log state transition if it changed
+        if self._last_logged_state == self.current_state:
+            self._handle_auto_transition()
         else:
-            new_state.power_enabled = False
-        
-        # Update power state in LightsaberState
+            print(f"Power state transition: {self.get_state_name(self._last_logged_state)} -> {self.get_state_name(self.current_state)}")
+            
+            # Handle swing_hit_state updates based on power state transitions
+            # Set to IDLE when entering ACTIVE from ACTIVATING
+            if (self._last_logged_state == self.ACTIVATING and 
+                self.current_state == self.ACTIVE):
+                new_state.swing_hit_state = new_state.IDLE
+                print("Set swing_hit_state to IDLE (entered ACTIVE)")
+            
+            # Set to OFF when entering DEACTIVATING
+            elif self.current_state == self.DEACTIVATING:
+                new_state.swing_hit_state = new_state.OFF
+                print("Set swing_hit_state to OFF (entered DEACTIVATING)")
+
+            
+         # Update power state in LightsaberState
         new_state.set_power_state(
             self.current_state,
             self.get_state_name(self.current_state)
         )
         
-        # Log state transition if it changed
-        if self.logging_manager and hasattr(self, '_last_logged_state'):
-            if self._last_logged_state != self.current_state:
-                print(f"Power state transition: {self.get_state_name(self._last_logged_state)} -> {self.get_state_name(self.current_state)}")
-                self._last_logged_state = self.current_state
-        elif self.logging_manager:
-            self._last_logged_state = self.current_state
+        self._last_logged_state = self.current_state
         
         return new_state
+    
