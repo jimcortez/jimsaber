@@ -8,6 +8,10 @@ PRIMARY_COLOR = (100, 0, 255)  # purple
 IDLE_COLOR = (25, 0, 64)       # dimmed primary (1/4 brightness)
 HIT_COLOR = (255, 255, 255)    # white
 
+NUM_PIXELS = 115
+ACTIVATION_DURATION = 1.7  # User-configurable duration for power on/off animations and sounds
+DEACTIVATION_DURATION = 1.15  # User-configurable duration for power off animations and sounds
+
 STRIP_ANIMATIONS = [
     {
         "animation_type": "solid",
@@ -34,12 +38,10 @@ STRIP_ANIMATIONS = [
         }
     },
     {
-        "animation_type": "rainbow_chase",
+        "animation_type": "rainbow",
         "params": {
-            "speed": 0.3,
-            "size": 3,
-            "spacing": 2
-            
+            "speed": 0.05,
+            "period": 2
         }
     },
     {
@@ -50,6 +52,39 @@ STRIP_ANIMATIONS = [
         }
     }
 ]
+
+SABER_STATE_ANIMATIONS = {
+    'hit': {
+        "animation_type": "solid",
+        "params": {
+            "color": color.WHITE
+        }
+    },
+    # 'swing': {
+    #     "animation_type": "solid",
+    #     "params": {
+    #         "color": color.GREEN
+    #     }
+    # },
+    'activating': {
+        "animation_type": "saber_activate",
+        "params": {
+            "speed": 0.01,
+            "duration": ACTIVATION_DURATION,
+            "color": PRIMARY_COLOR
+        }
+    },
+    'deactivating': {
+        "animation_type": "saber_activate",
+        "params": {
+            "speed": 0.01,
+            "duration": DEACTIVATION_DURATION,
+            "color": color.BLACK,
+            "reverse": True
+        }
+    }
+}
+
 
 # Animation settings
 ANIMATION_DURATION = 2.0  # How long to run the color cycle animation
@@ -153,39 +188,6 @@ ACTIVITY_BUTTON_LED_ANIMATIONS = {
     }
 }
 
-SABER_STATE_ANIMATIONS = {
-    'hit': {
-        "animation_type": "solid",
-        "params": {
-            "color": color.WHITE
-        }
-    },
-    # 'swing': {
-    #     "animation_type": "solid",
-    #     "params": {
-    #         "color": color.GREEN
-    #     }
-    # },
-    'activating': {
-        "animation_type": "chase",
-        "params": {
-            "speed": 0.1,
-            "size": 3,
-            "spacing": 2,
-            "color": PRIMARY_COLOR
-        }
-    },
-    'deactivating': {
-        "animation_type": "chase",
-        "params": {
-            "speed": 0.1,
-            "size": 3,
-            "spacing": 2,
-            "color": (25, 0, 64),  # Black for power off
-            "reverse": True
-        }
-    }
-}
 
 # Sound effects for long press (can be modified)
 SOUND_EFFECTS = ['hit', 'swing', 'on', 'off']
@@ -216,7 +218,7 @@ ACTIVITY_BUTTON_LED_PIN = board.A4  # Pin for activity button LED
 ACTIVITY_BUTTON_LED_BRIGHTNESS = 0.6  # Activity button LED brightness (monochrome PWM)
 
 # NeoPixel brightness levels (0.0 to 1.0)
-NUM_PIXELS = 150
+
 NEOPIXEL_PIN = board.D5  # Main NeoPixel strip
 STRIP_BRIGHTNESS = 1.0  # Main NeoPixel strip brightness
 

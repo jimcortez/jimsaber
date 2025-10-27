@@ -15,6 +15,7 @@ from adafruit_led_animation.animation.comet import Comet
 from adafruit_led_animation.animation.rainbowcomet import RainbowComet
 from adafruit_led_animation.animation.rainbowsparkle import RainbowSparkle
 from adafruit_led_animation.group import AnimationGroup
+from led_animations.saber_activate import SaberActivate
 import config
 import microcontroller
 
@@ -31,6 +32,7 @@ ANIMATION_CLASSES = {
     "comet": Comet,
     "rainbow_comet": RainbowComet,
     "rainbow_sparkle": RainbowSparkle,
+    "saber_activate": SaberActivate
 }
 
 class LEDAnimationManager:

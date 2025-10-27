@@ -172,6 +172,8 @@ class SaberLEDManager:
             self.current_animation = self.activate_state_animation
 
             if not self.power_animation_active:
+                self.activate_state_animation.reset()
+                self.strip.fill((0,0,0))
                 self.power_animation_active = True
                 self.power_animation_start_time = time.monotonic()
                 print("Started power-on LED animation")
@@ -200,6 +202,7 @@ class SaberLEDManager:
             self.current_animation = self.deactivate_state_animation
 
             if not self.power_animation_active:
+                self.deactivate_state_animation.reset()
                 self.power_animation_active = True
                 self.power_animation_start_time = time.monotonic()
                 print("Started power-off LED animation")
