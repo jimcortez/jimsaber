@@ -52,12 +52,6 @@ class SaberActivate(Animation):
         self._animation_start_time = None
         self._num_pixels = len(pixel_object)
 
-    def _set_color(self, color):
-        """
-        Store the animation color.
-        """
-        self._color = color
-
     def draw(self):
         """
         Draw the duration-based animation.

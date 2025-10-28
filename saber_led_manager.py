@@ -172,8 +172,13 @@ class SaberLEDManager:
             self.current_animation = self.activate_state_animation
 
             if not self.power_animation_active:
+                #reset the animation and set the color to the current animation color
                 self.activate_state_animation.reset()
                 self.strip.fill((0,0,0))
+                cur_color = self.get_current_animation().color
+                if cur_color is not None and cur_color != (0,0,0):
+                    self.activate_state_animation.color = cur_color
+
                 self.power_animation_active = True
                 self.power_animation_start_time = time.monotonic()
                 print("Started power-on LED animation")
