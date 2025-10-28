@@ -3,9 +3,10 @@ SaberActivate - Duration-based animation for saber activation effects.
 
 This module provides a custom animation class that creates a solid color
 wave effect that advances across the LED strip in a specified duration,
-regardless of the frame rate.
+regardless of the frame rate. Uses a nonlinear curve for more dynamic animation.
 """
 
+import math
 from lib.adafruit_led_animation.animation import Animation
 from lib.adafruit_led_animation.color import BLACK
 from lib.adafruit_led_animation import monotonic_ms
@@ -56,6 +57,7 @@ class SaberActivate(Animation):
         """
         Draw the duration-based animation.
         Each LED turns on in sequence during the duration and stays on.
+        Uses a nonlinear curve for more dynamic animation similar to the original implementation.
         Only changes colors of LEDs being activated, preserving existing patterns.
         """
         # Initialize start time on first draw
@@ -67,17 +69,31 @@ class SaberActivate(Animation):
         elapsed_seconds = elapsed_ms / 1000.0
         
         # Calculate how far along the animation should be
-        progress = min(elapsed_seconds / self.duration, 1.0)
+        fraction = min(elapsed_seconds / self.duration, 1.0)
+        
+        # Apply nonlinear curve for more dynamic animation (similar to original implementation)
+        # Using power of 0.5 creates a curve that starts fast and slows down
+        if self.reverse:
+            # For reverse, invert the fraction first, then apply curve
+            fraction = 1.0 - fraction
+            fraction = math.pow(fraction, 0.5)
+            fraction = 1.0 - fraction  # Invert back for reverse direction
+        else:
+            # For forward, apply the nonlinear curve directly
+            fraction = math.pow(fraction, 0.5)
+        
+        # Calculate how many LEDs should be on based on nonlinear progress
+        threshold = int(self._num_pixels * fraction + 0.5)
         
         # Calculate how many LEDs should be on based on progress
         if self.reverse:
             # For reverse, count from the end
-            leds_to_turn_on = int(progress * self._num_pixels)
+            leds_to_turn_on = threshold
             start_index = self._num_pixels - leds_to_turn_on
             end_index = self._num_pixels
         else:
             # For forward, count from the beginning
-            leds_to_turn_on = int(progress * self._num_pixels)
+            leds_to_turn_on = threshold
             start_index = 0
             end_index = leds_to_turn_on
         
@@ -89,7 +105,7 @@ class SaberActivate(Animation):
                 pixels[i] = self._color
 
         # Check if animation is complete
-        if progress >= 1.0:
+        if elapsed_seconds >= self.duration:
             # Reset for next cycle
             self.reset()
             self.cycle_complete = True
