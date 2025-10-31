@@ -115,3 +115,15 @@ class SaberActivate(Animation):
         Resets to the first state and clears the start time.
         """
         self._animation_start_time = None
+    
+    def update_duration(self, new_duration):
+        """
+        Update the animation duration dynamically.
+        This allows the animation to adapt to different sound effect durations.
+        
+        :param float new_duration: New duration for the animation in seconds.
+        """
+        self.duration = new_duration
+        # Reset the animation if it's currently running to use the new duration
+        if self._animation_start_time is not None:
+            self.reset()

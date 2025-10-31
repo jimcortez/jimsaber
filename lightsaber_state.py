@@ -10,7 +10,8 @@ class LightsaberState:
         'last_accel_read', 'cached_acceleration',
         'activity_button_pressed', 'long_press_triggered', 'battery_voltage', 'last_battery_read',
         'power_state', 'power_state_name',
-        'power_button_pressed'
+        'power_button_pressed',
+        'sound_effect_indices', 'sound_effect_durations'
     )
     
     # Main modes
@@ -70,6 +71,10 @@ class LightsaberState:
         # Button states
         self.power_button_pressed = False
         self.activity_button_pressed = False
+        
+        # Sound effect playlist tracking
+        self.sound_effect_indices = {}  # Dictionary to track indices for each sound effect type
+        self.sound_effect_durations = {}  # Dictionary to track durations for each sound effect type
     
     def copy(self, clear_events=True):
         """Create a deep copy of the current state - optimized for performance"""
@@ -104,6 +109,10 @@ class LightsaberState:
         new_state.power_button_pressed = self.power_button_pressed
         new_state.activity_button_pressed = self.activity_button_pressed
         
+        # Copy sound effect playlist tracking
+        new_state.sound_effect_indices = self.sound_effect_indices.copy()
+        new_state.sound_effect_durations = self.sound_effect_durations.copy()
+        
         return new_state
     
     def add_event(self, event):
@@ -124,3 +133,85 @@ class LightsaberState:
         """Set the current power state from the power state machine"""
         self.power_state = power_state
         self.power_state_name = power_state_name
+    
+    def reset_sound_playlist(self, sound_type=None):
+        """Reset the sound effect playlist to the beginning for a specific type"""
+        if sound_type is not None:
+            self.sound_effect_indices[sound_type] = 0
+            # Duration will be set when get_current_sound_effect is called
+        else:
+            # Reset all sound effect indices and durations
+            self.sound_effect_indices.clear()
+            self.sound_effect_durations.clear()
+    
+    def advance_sound_playlist(self, sound_effects_list, sound_type=None):
+        """Advance to the next sound effect in the playlist, cycling back to start if needed"""
+        if not sound_effects_list:
+            return None
+        
+        # Use sound_type if provided, otherwise try to infer from the list
+        if sound_type is None:
+            # Try to infer sound type from the first filename
+            if sound_effects_list:
+                first_filename = sound_effects_list[0][0]
+                if 'hit' in first_filename:
+                    sound_type = 'hit'
+                elif 'swing' in first_filename:
+                    sound_type = 'swing'
+                elif 'on' in first_filename:
+                    sound_type = 'activating'
+                elif 'off' in first_filename:
+                    sound_type = 'deactivating'
+                elif 'idle' in first_filename:
+                    sound_type = 'idle'
+                else:
+                    sound_type = 'default'
+        
+        # Initialize index if not exists
+        if sound_type not in self.sound_effect_indices:
+            self.sound_effect_indices[sound_type] = 0
+        
+        # Advance index
+        self.sound_effect_indices[sound_type] = (self.sound_effect_indices[sound_type] + 1) % len(sound_effects_list)
+        filename, duration = sound_effects_list[self.sound_effect_indices[sound_type]]
+        self.sound_effect_durations[sound_type] = duration
+        return filename, duration
+    
+    def get_current_sound_effect(self, sound_effects_list, sound_type=None):
+        """Get the current sound effect from the playlist"""
+        if not sound_effects_list:
+            return None
+        
+        # Use sound_type if provided, otherwise try to infer from the list
+        if sound_type is None:
+            # Try to infer sound type from the first filename
+            if sound_effects_list:
+                first_filename = sound_effects_list[0][0]
+                if 'hit' in first_filename:
+                    sound_type = 'hit'
+                elif 'swing' in first_filename:
+                    sound_type = 'swing'
+                elif 'on' in first_filename:
+                    sound_type = 'activating'
+                elif 'off' in first_filename:
+                    sound_type = 'deactivating'
+                elif 'idle' in first_filename:
+                    sound_type = 'idle'
+                else:
+                    sound_type = 'default'
+        
+        # Initialize index if not exists
+        if sound_type not in self.sound_effect_indices:
+            self.sound_effect_indices[sound_type] = 0
+        
+        # Ensure index is within bounds
+        if self.sound_effect_indices[sound_type] >= len(sound_effects_list):
+            self.sound_effect_indices[sound_type] = 0
+        
+        filename, duration = sound_effects_list[self.sound_effect_indices[sound_type]]
+        self.sound_effect_durations[sound_type] = duration
+        return filename, duration
+    
+    def get_current_sound_duration(self, sound_type):
+        """Get the current duration for a specific sound type"""
+        return self.sound_effect_durations.get(sound_type, 0.0)

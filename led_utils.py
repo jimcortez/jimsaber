@@ -18,6 +18,7 @@ from adafruit_led_animation.group import AnimationGroup
 from led_animations.saber_activate import SaberActivate
 import config
 import microcontroller
+from led_animations.marble_roll import MarbleRollAnimation
 
 # Animation class mapping
 ANIMATION_CLASSES = {
@@ -32,7 +33,8 @@ ANIMATION_CLASSES = {
     "comet": Comet,
     "rainbow_comet": RainbowComet,
     "rainbow_sparkle": RainbowSparkle,
-    "saber_activate": SaberActivate
+    "saber_activate": SaberActivate,
+    "marble_roll": MarbleRollAnimation
 }
 
 class LEDAnimationManager:

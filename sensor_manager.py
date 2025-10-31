@@ -1,6 +1,7 @@
 """Sensor management module for the lightsaber"""
 
 import time
+import math
 import busio
 import board
 from digitalio import DigitalInOut, Direction, Pull
@@ -9,6 +10,26 @@ import adafruit_lis3dh
 from adafruit_debouncer import Button, Debouncer
 import config
 from lightsaber_state import LightsaberState
+
+class MotionFilter:
+    """Simple moving average filter for accelerometer data"""
+    
+    def __init__(self, window_size=5):
+        self.window_size = window_size
+        self.accel_history = []
+    
+    def filter_acceleration(self, x, y, z):
+        """Apply moving average filter to acceleration data"""
+        self.accel_history.append((x, y, z))
+        if len(self.accel_history) > self.window_size:
+            self.accel_history.pop(0)
+        
+        # Calculate moving average
+        avg_x = sum(acc[0] for acc in self.accel_history) / len(self.accel_history)
+        avg_y = sum(acc[1] for acc in self.accel_history) / len(self.accel_history)
+        avg_z = sum(acc[2] for acc in self.accel_history) / len(self.accel_history)
+        
+        return avg_x, avg_y, avg_z
 
 class SensorManager:
     """Manages all sensor inputs including accelerometer, buttons, and battery monitoring"""
@@ -43,20 +64,22 @@ class SensorManager:
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
             self.accel = adafruit_lis3dh.LIS3DH_I2C(i2c)
-            self.accel.range = adafruit_lis3dh.RANGE_4_G
-            print("Accelerometer initialized successfully")
+            # Optimize for swing detection: higher range and data rate
+            self.accel.range = adafruit_lis3dh.RANGE_8_G  # Better resolution for swings
+            self.accel.data_rate = adafruit_lis3dh.DATARATE_1344_HZ  # Higher sampling rate
         except RuntimeError as e:
             if "No pull up found on SDA or SCL" in str(e):
                 print("WARNING: Accelerometer board not detected - motion detection disabled")
-                print("Check wiring or connect accelerometer board for motion detection")
                 self.accel = None
             else:
                 # Re-raise if it's a different RuntimeError
                 raise
         except Exception as e:
             print(f"WARNING: Failed to initialize accelerometer: {e}")
-            print("Motion detection will be disabled")
             self.accel = None
+        
+        # Initialize motion filter for noise reduction
+        self.motion_filter = MotionFilter(window_size=config.MOTION_FILTER_WINDOW_SIZE)
     
     def _initialize_power_button_pin(self):
         """Initialize the power button pin for button detection"""
@@ -67,7 +90,6 @@ class SensorManager:
                 power_button_pin.pull = Pull.UP
                 self.power_button = Button(power_button_pin)
                 self.power_button_pin = power_button_pin
-                print("Initialized power button pin for button detection")
         except Exception as e:
             print(f"Error initializing power button pin: {e}")
     
@@ -79,7 +101,12 @@ class SensorManager:
         now = time.monotonic()
         if now - new_state.last_accel_read >= config.ACCEL_READ_INTERVAL:
             new_state.last_accel_read = now
-            new_state.cached_acceleration = self.accel.acceleration
+            try:
+                acceleration = self.accel.acceleration
+                new_state.cached_acceleration = acceleration
+            except Exception as e:
+                print(f"ERROR: Failed to read accelerometer: {e}")
+                return new_state.cached_acceleration  # Return cached value on error
         return new_state.cached_acceleration
     
     def get_battery_voltage(self, new_state):
@@ -121,7 +148,6 @@ class SensorManager:
         
         # Detect button press (rising edge)
         if not old_state.power_button_pressed and new_state.power_button_pressed:
-            print("Power button pressed")
             
             time_since_last_press = current_time - self.last_power_button_press_time
             
@@ -129,10 +155,8 @@ class SensorManager:
             if self.pending_single_press and time_since_last_press < config.DOUBLE_PRESS_TIMEOUT:
                 # Double-press detected - only trigger animation cycle if swing_hit_state is not OFF
                 if new_state.swing_hit_state != new_state.OFF:
-                    print("Power button double-press detected - cycling animation")
                     new_state.add_event(new_state.ACTIVITY_BUTTON_SHORT_PRESS)
                 else:
-                    print("Power button double-press detected but swing_hit_state is OFF - triggering normal press")
                     # Still add the normal short press event
                     new_state.add_event(new_state.POWER_BUTTON_SHORT_PRESS)
                 
@@ -152,7 +176,6 @@ class SensorManager:
             time_since_last_press = current_time - self.last_power_button_press_time
             if time_since_last_press >= config.DOUBLE_PRESS_TIMEOUT:
                 # Timeout expired - emit the pending single press event
-                print("Single press confirmed after timeout")
                 new_state.add_event(new_state.POWER_BUTTON_SHORT_PRESS)
                 self.pending_single_press = False
                 self.power_button_press_count = 0
@@ -166,33 +189,43 @@ class SensorManager:
         new_state.activity_button_pressed = self.activity_button.value
 
         if old_state.activity_button_pressed != new_state.activity_button_pressed:
-            print("Activity button pressed state changed")
+            pass
         
         # Detect activity button events
         if self.activity_button.value and self.activity_button.current_duration >= config.LONG_PRESS_TIME:
             if (new_state.swing_hit_state >= new_state.IDLE and not new_state.long_press_triggered):
-                print("Activity button long press detected")
+                pass
                 new_state.add_event(new_state.ACTIVITY_BUTTON_LONG_PRESS)
                 new_state.long_press_triggered = True
         elif not self.activity_button.value and new_state.long_press_triggered:
             new_state.long_press_triggered = False
         elif self.activity_button.rose:
-            print("Activity button short press detected")
+            pass
             new_state.add_event(new_state.ACTIVITY_BUTTON_SHORT_PRESS)
     
     def _process_motion_detection(self, old_state, new_state):
-        """Process motion detection events from accelerometer"""
+        """Process motion detection events from accelerometer with improved accuracy"""
         # Detect motion events
         if new_state.swing_hit_state != new_state.OFF:
             acceleration = new_state.cached_acceleration
             if acceleration is not None:
                 x, y, z = acceleration
-                acceleration_magnitude = x * x + z * z
                 
-                # Determine current motion state based on acceleration thresholds
-                if acceleration_magnitude > config.HIT_THRESHOLD:
+                # Apply filtering to reduce noise
+                filtered_x, filtered_y, filtered_z = self.motion_filter.filter_acceleration(x, y, z)
+                
+                # Calculate acceleration magnitude squared (matching original implementation)
+                # Using squared values avoids sqrt calculation and matches original thresholds
+                # Original used x*x + z*z, new uses x*x + y*y + z*z for all three axes
+                acceleration_magnitude_squared = filtered_x * filtered_x + filtered_y * filtered_y + filtered_z * filtered_z
+                acceleration_magnitude = math.sqrt(acceleration_magnitude_squared)  # For logging/debugging only
+                
+                # No verbose motion debug logging
+                
+                # Determine current motion state based on acceleration thresholds (using squared values)
+                # Thresholds are calibrated for squared acceleration values (original implementation style)
+                if acceleration_magnitude_squared > config.HIT_THRESHOLD:
                     # HIT: Large acceleration detected
-                    print("HIT: Large acceleration detected")
                     if old_state.swing_hit_state != old_state.HIT:
                         new_state.add_event(new_state.HIT_START)
                         new_state.swing_hit_state = new_state.HIT
@@ -200,8 +233,7 @@ class SensorManager:
                         new_state.add_event(new_state.HIT_IN_PROGRESS)
                         new_state.swing_hit_state = new_state.HIT
                         
-                elif acceleration_magnitude > config.SWING_THRESHOLD:
-                    print("SWING: Moderate acceleration detected")
+                elif acceleration_magnitude_squared > config.SWING_THRESHOLD:
                     # SWING: Moderate acceleration detected
                     if old_state.swing_hit_state == old_state.HIT:
                         # Transitioning from HIT to SWING
@@ -233,6 +265,12 @@ class SensorManager:
                         # Continue idle
                         new_state.add_event(new_state.IDLE_IN_PROGRESS)
                         new_state.swing_hit_state = new_state.IDLE
+            else:
+                # No verbose logging when acceleration is None
+                pass
+        else:
+            # Motion detection disabled when OFF
+            pass
     
     def release_power_button_pin(self):
         """Release the power button pin for use by alarm system"""
@@ -251,7 +289,7 @@ class SensorManager:
             # Additional delay to ensure pin is fully released and unregistered
             time.sleep(0.2)
             
-            print("Released and unregistered power button pin for alarm use")
+            # No verbose logging on release
         except Exception as e:
             print(f"Error releasing power button pin: {e}")
     
@@ -260,7 +298,7 @@ class SensorManager:
         try:
             if not self.power_button_pin:
                 self._initialize_power_button_pin()
-                print("Restored power button pin after wake")
+                # No verbose logging on restore
         except Exception as e:
             print(f"Error restoring power button pin: {e}")
     

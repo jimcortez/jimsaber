@@ -106,11 +106,6 @@ class SaberLEDManager:
             current_config = config.STRIP_ANIMATIONS[self.current_animation_index]
             if current_config["animation_type"] == "solid":
                 new_color = current_config["params"]["color"]
-                config.IDLE_COLOR = (
-                    int(new_color[0] / 4),
-                    int(new_color[1] / 4),
-                    int(new_color[2] / 4)
-                )
                 print(f"Animation changed to solid color: {new_color}")
             else:
                 # Non-solid animation - keep default idle color
@@ -157,12 +152,22 @@ class SaberLEDManager:
 
     def _handle_activation_state(self, new_state, power_state_machine):
         """Handle saber LED behavior for ACTIVATING state with state lock management"""
+        # Get the current activation duration from the state
+        activation_duration = new_state.get_current_sound_duration('activating')
+        if activation_duration <= 0:
+            # Fallback to first activation sound duration if state doesn't have it yet
+            activation_effects = config.SOUND_EFFECTS.get('activating', [])
+            if activation_effects:
+                activation_duration = activation_effects[0][1]
+            else:
+                activation_duration = 2.0  # Default fallback
+        
         # Create and add state lock for activation sound if not already created
         if self.activation_lock is None:
             self.activation_lock = StateLock(
                 name="activation_saber_animation",
                 blocked=True,
-                timeout=config.ACTIVATION_DURATION,  # Add buffer time
+                timeout=activation_duration + 2.0,  # Add buffer time
                 valid_states=[power_state_machine.ACTIVATING]
             )
             power_state_machine.add_state_lock(self.activation_lock)
@@ -172,6 +177,9 @@ class SaberLEDManager:
             self.current_animation = self.activate_state_animation
 
             if not self.power_animation_active:
+                # Update animation duration with current sound duration
+                self.activate_state_animation.update_duration(activation_duration)
+                
                 #reset the animation and set the color to the current animation color
                 self.activate_state_animation.reset()
                 self.strip.fill((0,0,0))
@@ -181,23 +189,33 @@ class SaberLEDManager:
 
                 self.power_animation_active = True
                 self.power_animation_start_time = time.monotonic()
-                print("Started power-on LED animation")
-            # Check if power-on animation is complete based on ACTIVATION_DURATION
+                print(f"Started power-on LED animation (duration: {activation_duration:.2f}s)")
+            # Check if power-on animation is complete based on current duration
             elif self.power_animation_active:
                 elapsed = time.monotonic() - self.power_animation_start_time
-                if elapsed >= config.ACTIVATION_DURATION:
+                if elapsed >= activation_duration:
                     self.power_animation_active = False
                     self.current_animation = None
                     self.activation_lock.unlock()
     
     def _handle_deactivation_state(self, new_state, power_state_machine):
         """Handle saber LED behavior for DEACTIVATING state with state lock management"""
+        # Get the current deactivation duration from the state
+        deactivation_duration = new_state.get_current_sound_duration('deactivating')
+        if deactivation_duration <= 0:
+            # Fallback to first deactivation sound duration if state doesn't have it yet
+            deactivation_effects = config.SOUND_EFFECTS.get('deactivating', [])
+            if deactivation_effects:
+                deactivation_duration = deactivation_effects[0][1]
+            else:
+                deactivation_duration = 2.0  # Default fallback
+        
         # Create and add state lock for activation sound if not already created
         if self.deactivation_lock is None:
             self.deactivation_lock = StateLock(
                 name="deactivation_saber_animation",
                 blocked=True,
-                timeout=config.DEACTIVATION_DURATION + 2.0,  # Add buffer time
+                timeout=deactivation_duration + 2.0,  # Add buffer time
                 valid_states=[power_state_machine.DEACTIVATING]
             )
             power_state_machine.add_state_lock(self.deactivation_lock)
@@ -207,14 +225,18 @@ class SaberLEDManager:
             self.current_animation = self.deactivate_state_animation
 
             if not self.power_animation_active:
+                # Update animation duration with current sound duration
+                if hasattr(self.deactivate_state_animation, 'update_duration'):
+                    self.deactivate_state_animation.update_duration(deactivation_duration)
+                
                 self.deactivate_state_animation.reset()
                 self.power_animation_active = True
                 self.power_animation_start_time = time.monotonic()
-                print("Started power-off LED animation")
-            # Check if power-off animation is complete based on DEACTIVATION_DURATION
+                print(f"Started power-off LED animation (duration: {deactivation_duration:.2f}s)")
+            # Check if power-off animation is complete based on current duration
             elif self.power_animation_active:
                 elapsed = time.monotonic() - self.power_animation_start_time
-                if elapsed >= config.DEACTIVATION_DURATION:
+                if elapsed >= deactivation_duration:
                     self.power_animation_active = False
                     self.current_animation = None
                     self.deactivation_lock.unlock()
@@ -264,6 +286,9 @@ class SaberLEDManager:
                 self.current_animation = self.get_current_animation()
 
         if self.current_animation:
+            # Provide the latest lightsaber state to animations that support it
+            if hasattr(self.current_animation, 'lightsaber_state'):
+                self.current_animation.lightsaber_state = new_state
             self.current_animation.animate()
         
         return new_state
